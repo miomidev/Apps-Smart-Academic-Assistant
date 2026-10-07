@@ -394,9 +394,31 @@ class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
   void initState() {
     super.initState();
     _player = AudioPlayer();
+    _initAudioPlayer();
     if (widget.fallbackDurationSeconds != null) {
       _duration = Duration(seconds: widget.fallbackDurationSeconds!);
     }
+  }
+
+  Future<void> _initAudioPlayer() async {
+    try {
+      await _player.setAudioContext(
+        AudioContext(
+          android: AudioContextAndroid(
+            isSpeakerphoneOn: true,
+            stayAwake: true,
+            contentType: AndroidContentType.music,
+            usageType: AndroidUsageType.media,
+            audioFocus: AndroidAudioFocus.gain,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playback,
+            options: const {AVAudioSessionOptions.defaultToSpeaker},
+          ),
+        ),
+      );
+      await _player.setVolume(1.0);
+    } catch (_) {}
 
     _player.onPlayerStateChanged.listen((state) {
       if (mounted) {

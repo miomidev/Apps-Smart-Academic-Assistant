@@ -401,6 +401,7 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
 
                         // Pause / Resume FAB
                         FloatingActionButton.large(
+                          heroTag: 'fab_focus_active',
                           onPressed: _togglePause,
                           backgroundColor: Colors.white.withValues(alpha: 0.15),
                           foregroundColor: Colors.white,

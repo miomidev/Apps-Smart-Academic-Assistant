@@ -342,6 +342,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           width: 66,
           height: 66,
           child: FloatingActionButton(
+            heroTag: 'fab_notes',
             backgroundColor: const Color(0xFF58ACF6),
             elevation: 4,
             shape: const CircleBorder(),

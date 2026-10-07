@@ -42,16 +42,15 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   Timer? _ticker;
   int _centisecondsElapsed = 0;
 
-  // Live Speech to Text transcript
-  String _liveTranscript = '';
-  bool _isSpeechInitialized = false;
-
   @override
   void initState() {
     super.initState();
     _audioRecorder = AudioRecorder();
     _speech = stt.SpeechToText();
-    _initAndStartRecording();
+    // Initialize resting baseline waveform bars
+    for (int i = 0; i < _maxVisibleBars; i++) {
+      _waveAmplitudes.add(0.06);
+    }
   }
 
   @override
@@ -63,7 +62,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     super.dispose();
   }
 
-  Future<void> _initAndStartRecording() async {
+  Future<void> _startRecording() async {
     // 1. Check microphone permission
     final hasPermission = await _audioRecorder.hasPermission();
     if (!hasPermission) {
@@ -71,24 +70,11 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
         );
-        Navigator.pop(context);
       }
       return;
     }
 
-    // 2. Initialize SpeechToText for live transcript in background
-    try {
-      _isSpeechInitialized = await _speech.initialize(
-        onError: (err) {},
-        onStatus: (status) {
-          if ((status == 'done' || status == 'notListening') && _isRecording && !_isPaused) {
-            _restartSpeech();
-          }
-        },
-      );
-    } catch (_) {}
-
-    // 3. Start audio file recording
+    // 2. Start audio file recording with mono AAC for maximum compatibility
     final dir = await getApplicationDocumentsDirectory();
     final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
     final filePath = '${dir.path}/$fileName';
@@ -99,24 +85,24 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
         encoder: AudioEncoder.aacLc,
         bitRate: 128000,
         sampleRate: 44100,
+        numChannels: 1,
       ),
       path: filePath,
     );
 
-    // 4. Start speech recognition
-    _startSpeech();
-
-    // 5. Start timer
+    // 3. Reset and start timer
+    _centisecondsElapsed = 0;
+    _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
       if (!_isPaused && mounted) {
         setState(() => _centisecondsElapsed++);
       }
     });
 
-    // 6. Listen to real-time amplitude for visualizer
+    // 4. Listen to real-time amplitude for visualizer
+    _amplitudeSub?.cancel();
     _amplitudeSub = _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 70)).listen((amp) {
       if (_isPaused || !mounted) return;
-      // amp.current is in dBFS (-160 to 0). Normalize to 0.05 .. 1.0
       final db = amp.current;
       double normalized;
       if (db <= -60) {
@@ -134,47 +120,20 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     });
 
     if (mounted) {
-      setState(() => _isRecording = true);
+      setState(() {
+        _isRecording = true;
+        _isPaused = false;
+      });
     }
-  }
-
-  void _startSpeech() {
-    if (!_isSpeechInitialized) return;
-    try {
-      _speech.listen(
-        onResult: (result) {
-          if (mounted && result.recognizedWords.isNotEmpty) {
-            setState(() {
-              _liveTranscript = result.recognizedWords;
-            });
-          }
-        },
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-        ),
-      );
-    } catch (_) {}
-  }
-
-  void _restartSpeech() {
-    if (!_isRecording || _isPaused || !mounted) return;
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (_isRecording && !_isPaused && mounted) {
-        _startSpeech();
-      }
-    });
   }
 
   Future<void> _togglePauseResume() async {
     if (!_isRecording) return;
     if (_isPaused) {
       await _audioRecorder.resume();
-      _startSpeech();
       setState(() => _isPaused = false);
     } else {
       await _audioRecorder.pause();
-      _speech.stop();
       setState(() => _isPaused = true);
     }
   }
@@ -182,7 +141,6 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   Future<void> _stopRecording() async {
     _ticker?.cancel();
     _amplitudeSub?.cancel();
-    _speech.stop();
 
     String? finalPath;
     try {
@@ -190,6 +148,8 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     } catch (_) {
       finalPath = _recordedFilePath;
     }
+
+    finalPath ??= _recordedFilePath;
 
     setState(() {
       _isRecording = false;
@@ -212,7 +172,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
       builder: (ctx) => _SaveAudioNoteSheet(
         filePath: filePath,
         durationSeconds: (_centisecondsElapsed / 100).ceil(),
-        initialTranscript: _liveTranscript,
+        initialTranscript: '',
         preselectedCourseId: widget.preselectedCourseId,
         onSaved: () {
           Navigator.of(ctx).pop(); // close sheet
@@ -364,73 +324,95 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
 
             const Spacer(flex: 2),
 
-            // Live Transcript preview if any
-            if (_liveTranscript.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
-                child: Text(
-                  '"$_liveTranscript"',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic,
-                    color: Color(0xFF64748B),
+            // Recording Controls
+            if (!_isRecording && !_isPaused) ...[
+              // Button to start recording on user action
+              InkWell(
+                borderRadius: BorderRadius.circular(28),
+                onTap: _startRecording,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF58ACF6),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF58ACF6).withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.mic_rounded, color: Colors.white, size: 28),
+                      SizedBox(width: 12),
+                      Text(
+                        'Mulai Merekam',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-
-            // Recording Controls: Stop & Pause
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Stop Button
-                InkWell(
-                  borderRadius: BorderRadius.circular(22),
-                  onTap: _stopRecording,
-                  child: Container(
-                    width: 86,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF58ACF6),
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(5),
+            ] else ...[
+              // Recording Controls: Stop & Pause / Resume (Exact match Screenshot 2)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Stop Button
+                  InkWell(
+                    borderRadius: BorderRadius.circular(22),
+                    onTap: _stopRecording,
+                    child: Container(
+                      width: 86,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF58ACF6),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                // Pause / Resume Button
-                InkWell(
-                  borderRadius: BorderRadius.circular(22),
-                  onTap: _togglePauseResume,
-                  child: Container(
-                    width: 86,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF58ACF6),
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                        color: Colors.white,
-                        size: 38,
+                  const SizedBox(width: 16),
+                  // Pause / Resume Button
+                  InkWell(
+                    borderRadius: BorderRadius.circular(22),
+                    onTap: _togglePauseResume,
+                    child: Container(
+                      width: 86,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF58ACF6),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          color: Colors.white,
+                          size: 38,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
 
             const Spacer(flex: 3),
           ],
@@ -568,6 +550,25 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
   }
 
   Future<void> _initAudioPlayer() async {
+    try {
+      await _player.setAudioContext(
+        AudioContext(
+          android: AudioContextAndroid(
+            isSpeakerphoneOn: true,
+            stayAwake: true,
+            contentType: AndroidContentType.music,
+            usageType: AndroidUsageType.media,
+            audioFocus: AndroidAudioFocus.gain,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playback,
+            options: const {AVAudioSessionOptions.defaultToSpeaker},
+          ),
+        ),
+      );
+      await _player.setVolume(1.0);
+    } catch (_) {}
+
     _player.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() => _isPlaying = state == PlayerState.playing);
@@ -583,6 +584,15 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
     _player.onDurationChanged.listen((dur) {
       if (mounted) {
         setState(() => _totalDuration = dur);
+      }
+    });
+
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _currentPosition = Duration.zero;
+        });
       }
     });
   }
@@ -605,6 +615,7 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
     if (_isPlaying) {
       await _player.pause();
     } else {
+      await _player.setVolume(1.0);
       await _player.play(DeviceFileSource(widget.filePath));
     }
   }

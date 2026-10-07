@@ -121,6 +121,7 @@ class CoursesScreen extends ConsumerWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_courses',
         onPressed: () {
           Navigator.push(
             context,

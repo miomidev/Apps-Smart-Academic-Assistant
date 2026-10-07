@@ -96,6 +96,7 @@ class _SchedulesScreenState extends ConsumerState<SchedulesScreen>
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'fab_schedules',
         onPressed: () {
           Navigator.push(
             context,
