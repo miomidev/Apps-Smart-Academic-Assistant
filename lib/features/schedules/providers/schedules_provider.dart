@@ -58,7 +58,9 @@ class SchedulesNotifier extends StateNotifier<AsyncValue<List<ScheduleModel>>> {
       final list = await _apiClient.get<List<ScheduleModel>>(
         '/schedules',
         fromData: (data) {
-          final raw = data as List<dynamic>;
+          final List<dynamic> raw = (data is Map<String, dynamic>)
+              ? (data['items'] as List<dynamic>? ?? [])
+              : (data as List<dynamic>? ?? []);
           return raw
               .map((item) =>
                   ScheduleModel.fromJson(item as Map<String, dynamic>))

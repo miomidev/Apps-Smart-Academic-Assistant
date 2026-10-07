@@ -23,7 +23,9 @@ class CoursesNotifier extends StateNotifier<AsyncValue<List<CourseModel>>> {
       final courses = await _apiClient.get<List<CourseModel>>(
         '/courses',
         fromData: (data) {
-          final list = data as List<dynamic>;
+          final List<dynamic> list = (data is Map<String, dynamic>)
+              ? (data['items'] as List<dynamic>? ?? [])
+              : (data as List<dynamic>? ?? []);
           return list
               .map((item) => CourseModel.fromJson(item as Map<String, dynamic>))
               .toList();
