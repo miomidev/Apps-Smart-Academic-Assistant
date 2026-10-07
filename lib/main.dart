@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/constants/app_theme.dart';
 import 'core/routing/app_router.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,9 +12,15 @@ Future<void> main() async {
   // Initialize local notifications with Asia/Jakarta timezone
   await NotificationService.initialize();
 
+  // Initialize SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+
   runApp(
-    const ProviderScope(
-      child: SmartAcademicAssistantApp(),
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+      child: const SmartAcademicAssistantApp(),
     ),
   );
 }
