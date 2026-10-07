@@ -3,11 +3,12 @@ import 'dart:io';
 import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:stt_record/stt_record.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../courses/providers/courses_provider.dart';
 import '../models/note_model.dart';
@@ -26,13 +27,24 @@ class VoiceCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
+  late final PageController _pageController;
+  int _currentPageIndex = 0;
+
+  late final SttRecord _sttRecord;
   late final AudioRecorder _audioRecorder;
-  late final stt.SpeechToText _speech;
+  StreamSubscription<SttRecordTranscript>? _transcriptSub;
   StreamSubscription<Amplitude>? _amplitudeSub;
+  Timer? _sttAmplitudeTimer;
 
   bool _isRecording = false;
   bool _isPaused = false;
+  bool _usingSttRecord = true;
   String? _recordedFilePath;
+
+  // Real-time transcript state
+  String _liveTranscript = '';
+  late final TextEditingController _transcriptTextController;
+  late final ScrollController _transcriptScrollController;
 
   // Waveform data
   final List<double> _waveAmplitudes = [];
@@ -45,8 +57,12 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: 0);
+    _sttRecord = SttRecord();
     _audioRecorder = AudioRecorder();
-    _speech = stt.SpeechToText();
+    _transcriptTextController = TextEditingController();
+    _transcriptScrollController = ScrollController();
+
     // Initialize resting baseline waveform bars
     for (int i = 0; i < _maxVisibleBars; i++) {
       _waveAmplitudes.add(0.06);
@@ -56,67 +72,131 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _sttAmplitudeTimer?.cancel();
     _amplitudeSub?.cancel();
+    _transcriptSub?.cancel();
     _audioRecorder.dispose();
-    _speech.stop();
+    _pageController.dispose();
+    _transcriptTextController.dispose();
+    _transcriptScrollController.dispose();
     super.dispose();
   }
 
   Future<void> _startRecording() async {
     // 1. Check microphone permission
-    final hasPermission = await _audioRecorder.hasPermission();
-    if (!hasPermission) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
-        );
+    final hasMic = await _sttRecord.hasPermission();
+    if (!hasMic) {
+      final granted = await _sttRecord.requestPermission();
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
+          );
+        }
+        return;
       }
-      return;
     }
 
-    // 2. Start audio file recording with mono AAC for maximum compatibility
-    final dir = await getApplicationDocumentsDirectory();
-    final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    final filePath = '${dir.path}/$fileName';
-    _recordedFilePath = filePath;
+    // Reset transcript and timer
+    setState(() {
+      _liveTranscript = '';
+      _transcriptTextController.text = '';
+      _centisecondsElapsed = 0;
+    });
 
-    await _audioRecorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
-        numChannels: 1,
-      ),
-      path: filePath,
-    );
+    // 2. Start recording with SttRecord (captures audio to WAV and streams live Speech-to-Text in parallel)
+    try {
+      _usingSttRecord = true;
+      _transcriptSub?.cancel();
+      _transcriptSub = _sttRecord.transcripts.listen((data) {
+        if (mounted && data.text.isNotEmpty) {
+          setState(() {
+            _liveTranscript = data.text;
+            _transcriptTextController.text = data.text;
+          });
+          // Auto scroll to bottom as speech text arrives
+          if (_transcriptScrollController.hasClients) {
+            _transcriptScrollController.animateTo(
+              _transcriptScrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            );
+          }
+        }
+      });
 
-    // 3. Reset and start timer
-    _centisecondsElapsed = 0;
+      await _sttRecord.start(
+        localeId: 'id-ID',
+        partialResults: true,
+        enableSystemNotification: false,
+      );
+
+      // Listen to amplitude for waveform via polling getAmplitude
+      _sttAmplitudeTimer?.cancel();
+      _sttAmplitudeTimer = Timer.periodic(const Duration(milliseconds: 70), (_) async {
+        if (_isPaused || !mounted || !_isRecording) return;
+        final amp = await _sttRecord.getAmplitude();
+        double normalized;
+        if (amp <= 0.05) {
+          normalized = 0.08 + Random().nextDouble() * 0.06;
+        } else {
+          normalized = amp.clamp(0.12, 1.0);
+        }
+
+        if (mounted) {
+          setState(() {
+            _waveAmplitudes.add(normalized);
+            if (_waveAmplitudes.length > _maxVisibleBars) {
+              _waveAmplitudes.removeAt(0);
+            }
+          });
+        }
+      });
+    } catch (e) {
+      // Graceful fallback to pure AudioRecorder if device speech service is unavailable
+      debugPrint('SttRecord start failed: $e. Falling back to AudioRecorder.');
+      _usingSttRecord = false;
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final filePath = '${dir.path}/$fileName';
+      _recordedFilePath = filePath;
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+          numChannels: 1,
+        ),
+        path: filePath,
+      );
+
+      _amplitudeSub?.cancel();
+      _amplitudeSub = _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 70)).listen((amp) {
+        if (_isPaused || !mounted) return;
+        final db = amp.current;
+        double normalized;
+        if (db <= -60) {
+          normalized = 0.08 + Random().nextDouble() * 0.07;
+        } else {
+          normalized = (1.0 + (db / 60.0)).clamp(0.12, 1.0);
+        }
+
+        setState(() {
+          _waveAmplitudes.add(normalized);
+          if (_waveAmplitudes.length > _maxVisibleBars) {
+            _waveAmplitudes.removeAt(0);
+          }
+        });
+      });
+    }
+
+    // 3. Start timer
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
       if (!_isPaused && mounted) {
         setState(() => _centisecondsElapsed++);
       }
-    });
-
-    // 4. Listen to real-time amplitude for visualizer
-    _amplitudeSub?.cancel();
-    _amplitudeSub = _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 70)).listen((amp) {
-      if (_isPaused || !mounted) return;
-      final db = amp.current;
-      double normalized;
-      if (db <= -60) {
-        normalized = 0.08 + Random().nextDouble() * 0.07;
-      } else {
-        normalized = (1.0 + (db / 60.0)).clamp(0.12, 1.0);
-      }
-
-      setState(() {
-        _waveAmplitudes.add(normalized);
-        if (_waveAmplitudes.length > _maxVisibleBars) {
-          _waveAmplitudes.removeAt(0);
-        }
-      });
     });
 
     if (mounted) {
@@ -130,23 +210,42 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   Future<void> _togglePauseResume() async {
     if (!_isRecording) return;
     if (_isPaused) {
-      await _audioRecorder.resume();
+      if (_usingSttRecord) {
+        await _sttRecord.resume();
+      } else {
+        await _audioRecorder.resume();
+      }
       setState(() => _isPaused = false);
     } else {
-      await _audioRecorder.pause();
+      if (_usingSttRecord) {
+        await _sttRecord.pause();
+      } else {
+        await _audioRecorder.pause();
+      }
       setState(() => _isPaused = true);
     }
   }
 
   Future<void> _stopRecording() async {
     _ticker?.cancel();
+    _sttAmplitudeTimer?.cancel();
     _amplitudeSub?.cancel();
+    _transcriptSub?.cancel();
 
     String? finalPath;
-    try {
-      finalPath = await _audioRecorder.stop();
-    } catch (_) {
-      finalPath = _recordedFilePath;
+    if (_usingSttRecord) {
+      try {
+        final stopRes = await _sttRecord.stop();
+        finalPath = stopRes.audioPath;
+      } catch (e) {
+        debugPrint('Error stopping SttRecord: $e');
+      }
+    } else {
+      try {
+        finalPath = await _audioRecorder.stop();
+      } catch (_) {
+        finalPath = _recordedFilePath;
+      }
     }
 
     finalPath ??= _recordedFilePath;
@@ -162,6 +261,11 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   }
 
   void _showSaveSheet(String filePath) {
+    // Sync any user edits in transcript text controller
+    final currentTranscript = _transcriptTextController.text.trim().isNotEmpty
+        ? _transcriptTextController.text.trim()
+        : _liveTranscript.trim();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -172,7 +276,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
       builder: (ctx) => _SaveAudioNoteSheet(
         filePath: filePath,
         durationSeconds: (_centisecondsElapsed / 100).ceil(),
-        initialTranscript: '',
+        initialTranscript: currentTranscript,
         preselectedCourseId: widget.preselectedCourseId,
         onSaved: () {
           Navigator.of(ctx).pop(); // close sheet
@@ -188,6 +292,27 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     final seconds = ((totalCentis % 6000) ~/ 100).toString().padLeft(2, '0');
     final centis = (totalCentis % 100).toString().padLeft(2, '0');
     return '$minutes.$seconds.$centis';
+  }
+
+  void _copyTranscript() {
+    final text = _transcriptTextController.text.trim().isNotEmpty
+        ? _transcriptTextController.text.trim()
+        : _liveTranscript.trim();
+
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Belum ada teks transkrip untuk disalin')),
+      );
+      return;
+    }
+
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Teks transkrip berhasil disalin ke papan klip!'),
+        backgroundColor: AppColors.success,
+      ),
+    );
   }
 
   @override
@@ -215,9 +340,17 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                   ),
                   InkWell(
                     borderRadius: BorderRadius.circular(24),
-                    onTap: () {
-                      _stopRecording();
-                      Navigator.pop(context);
+                    onTap: () async {
+                      if (_isRecording) {
+                        if (_usingSttRecord) {
+                          await _sttRecord.cancel();
+                        } else {
+                          await _audioRecorder.stop();
+                        }
+                      }
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
                     },
                     child: Container(
                       width: 44,
@@ -239,184 +372,700 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
               ),
             ),
 
-            const Spacer(flex: 2),
+            const SizedBox(height: 14),
 
-            // Waveform & Audio Ruler Visualizer
-            SizedBox(
-              height: 220,
-              width: double.infinity,
-              child: Stack(
-                alignment: Alignment.center,
+            // Top Tab / Pill Switcher (Swipe or Tap)
+            _buildTabSwitcher(),
+
+            // PageView containing Kontrol Rekaman (Page 0) & Auto Transkrip (Page 1)
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) {
+                  setState(() => _currentPageIndex = index);
+                },
+                physics: const BouncingScrollPhysics(),
                 children: [
-                  // Top Ruler
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: _AudioRuler(isTop: true),
-                  ),
+                  _buildControlsPage(),
+                  _buildTranscriptPage(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                  // Waveform Bars
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: _buildWaveformBars(),
-                  ),
+  // Top Tab Switcher
+  Widget _buildTabSwitcher() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          // Tab 0: Kontrol Rekaman
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                _pageController.animateToPage(
+                  0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                );
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _currentPageIndex == 0 ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _currentPageIndex == 0
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.graphic_eq_rounded,
+                      size: 18,
+                      color: _currentPageIndex == 0 ? const Color(0xFF58ACF6) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Kontrol Rekaman',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _currentPageIndex == 0 ? FontWeight.w700 : FontWeight.w600,
+                        color: _currentPageIndex == 0 ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
-                  // Bottom Ruler
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: _AudioRuler(isTop: false),
-                  ),
+          // Tab 1: Auto Transkrip
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                _pageController.animateToPage(
+                  1,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                );
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _currentPageIndex == 1 ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _currentPageIndex == 1
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.subtitles_rounded,
+                      size: 18,
+                      color: _currentPageIndex == 1 ? const Color(0xFF58ACF6) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Auto Transkrip',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _currentPageIndex == 1 ? FontWeight.w700 : FontWeight.w600,
+                        color: _currentPageIndex == 1 ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    if (_isRecording && !_isPaused) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                  // Central Red Indicator Needle with 2 Dots (Exact Match)
-                  Positioned(
-                    top: 2,
-                    bottom: 2,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Top Dot
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFFF87171),
-                          ),
-                        ),
-                        // Needle Line
-                        Expanded(
-                          child: Container(
-                            width: 2.2,
-                            color: const Color(0xFFF87171),
-                          ),
-                        ),
-                        // Bottom Dot
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFFF87171),
-                          ),
-                        ),
-                      ],
+  // Page 0: Kontrol Rekaman (Waveform, Audio Ruler, Red Indicator Needle, Timer & Controls)
+  Widget _buildControlsPage() {
+    return Column(
+      children: [
+        const Spacer(flex: 2),
+
+        // Waveform & Audio Ruler Visualizer
+        SizedBox(
+          height: 220,
+          width: double.infinity,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Top Ruler
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _AudioRuler(isTop: true),
+              ),
+
+              // Waveform Bars
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: _buildWaveformBars(),
+              ),
+
+              // Bottom Ruler
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _AudioRuler(isTop: false),
+              ),
+
+              // Central Red Indicator Needle with 2 Dots (Exact Match)
+              Positioned(
+                top: 2,
+                bottom: 2,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Top Dot
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFF87171),
+                      ),
+                    ),
+                    // Needle Line
+                    Expanded(
+                      child: Container(
+                        width: 2.2,
+                        color: const Color(0xFFF87171),
+                      ),
+                    ),
+                    // Bottom Dot
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFF87171),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 28),
+
+        // Timer (MM.SS.cc)
+        Text(
+          _formatTimer(),
+          style: const TextStyle(
+            fontSize: 42,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF0F172A),
+            letterSpacing: 1.0,
+          ),
+        ),
+
+        const Spacer(flex: 2),
+
+        // Recording Controls
+        if (!_isRecording && !_isPaused) ...[
+          // Button to start recording on user action
+          InkWell(
+            borderRadius: BorderRadius.circular(28),
+            onTap: _startRecording,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF58ACF6),
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF58ACF6).withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.mic_rounded, color: Colors.white, size: 28),
+                  SizedBox(width: 12),
+                  Text(
+                    'Mulai Merekam',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 28),
-
-            // Timer (MM.SS.cc)
-            Text(
-              _formatTimer(),
-              style: const TextStyle(
-                fontSize: 42,
-                fontWeight: FontWeight.w400,
-                color: Color(0xFF0F172A),
-                letterSpacing: 1.0,
-              ),
-            ),
-
-            const Spacer(flex: 2),
-
-            // Recording Controls
-            if (!_isRecording && !_isPaused) ...[
-              // Button to start recording on user action
+          ),
+        ] else ...[
+          // Recording Controls: Stop & Pause / Resume
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Stop Button
               InkWell(
-                borderRadius: BorderRadius.circular(28),
-                onTap: _startRecording,
+                borderRadius: BorderRadius.circular(22),
+                onTap: _stopRecording,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
+                  width: 86,
+                  height: 60,
                   decoration: BoxDecoration(
                     color: const Color(0xFF58ACF6),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF58ACF6).withValues(alpha: 0.35),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(5),
                       ),
-                    ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Pause / Resume Button
+              InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: _togglePauseResume,
+                child: Container(
+                  width: 86,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF58ACF6),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                      color: Colors.white,
+                      size: 38,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+
+        const SizedBox(height: 24),
+
+        // Live Transcript Peek Banner / Swipe Prompt
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              _pageController.animateToPage(
+                1,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: _liveTranscript.isNotEmpty ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _liveTranscript.isNotEmpty ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _liveTranscript.isNotEmpty ? Icons.record_voice_over_rounded : Icons.swipe_left_rounded,
+                    size: 20,
+                    color: const Color(0xFF58ACF6),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _liveTranscript.isNotEmpty
+                          ? 'Transkrip: "${_liveTranscript.length > 36 ? "${_liveTranscript.substring(_liveTranscript.length - 36)}..." : _liveTranscript}"'
+                          : 'Geser ke kanan untuk melihat Auto Transkrip →',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _liveTranscript.isNotEmpty ? const Color(0xFF1E40AF) : const Color(0xFF64748B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 13,
+                    color: Color(0xFF58ACF6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        const Spacer(flex: 1),
+      ],
+    );
+  }
+
+  // Page 1: Auto Transkrip (Live Real-time Transcript Viewer & Editor)
+  Widget _buildTranscriptPage() {
+    final transcriptText = _transcriptTextController.text.trim().isNotEmpty
+        ? _transcriptTextController.text.trim()
+        : _liveTranscript.trim();
+
+    final wordCount = transcriptText.isEmpty ? 0 : transcriptText.split(RegExp(r'\s+')).length;
+    final charCount = transcriptText.length;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+
+          // Status & Action Toolbar Row
+          Row(
+            children: [
+              // Real-time status pill
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _isRecording
+                      ? (_isPaused ? const Color(0xFFFEF3C7) : const Color(0xFFECFDF5))
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _isRecording
+                        ? (_isPaused ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0))
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _isRecording
+                            ? (_isPaused ? const Color(0xFFD97706) : const Color(0xFF10B981))
+                            : const Color(0xFF94A3B8),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isRecording
+                          ? (_isPaused ? 'Perekaman Dijeda' : 'Mentranskrip Suara...')
+                          : 'Belum Mulai Merekam',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _isRecording
+                            ? (_isPaused ? const Color(0xFFB45309) : const Color(0xFF047857))
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+
+              // Copy button
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: _copyTranscript,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.mic_rounded, color: Colors.white, size: 28),
-                      SizedBox(width: 12),
+                      Icon(Icons.copy_rounded, size: 14, color: Color(0xFF0F172A)),
+                      SizedBox(width: 4),
                       Text(
-                        'Mulai Merekam',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                        ),
+                        'Salin',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                       ),
                     ],
                   ),
                 ),
               ),
-            ] else ...[
-              // Recording Controls: Stop & Pause / Resume (Exact match Screenshot 2)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Stop Button
-                  InkWell(
-                    borderRadius: BorderRadius.circular(22),
-                    onTap: _stopRecording,
-                    child: Container(
-                      width: 86,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF58ACF6),
-                        borderRadius: BorderRadius.circular(22),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Main Transcript Area
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: transcriptText.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF58ACF6).withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.record_voice_over_rounded,
+                              color: Color(0xFF58ACF6),
+                              size: 32,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Belum Ada Suara Terdeteksi',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              'Bicaralah dengan jelas ke mikrofon. Suara akan otomatis dicatat menjadi teks secara langsung di sini.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF64748B),
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                          if (!_isRecording) ...[
+                            const SizedBox(height: 18),
+                            ElevatedButton.icon(
+                              onPressed: _startRecording,
+                              icon: const Icon(Icons.mic_rounded, size: 18),
+                              label: const Text('Mulai Merekam'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF58ACF6),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      child: Center(
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(5),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Word & Char counter chip
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '$wordCount kata • $charCount karakter',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                              ),
+                            ),
+                            const Spacer(),
+                            const Text(
+                              'Dapat diedit langsung',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 20, thickness: 1, color: Color(0xFFE2E8F0)),
+
+                        // Scrollable text field for reading and editing
+                        Expanded(
+                          child: SingleChildScrollView(
+                            controller: _transcriptScrollController,
+                            child: TextField(
+                              controller: _transcriptTextController,
+                              maxLines: null,
+                              keyboardType: TextInputType.multiline,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                height: 1.6,
+                                color: Color(0xFF0F172A),
+                                fontWeight: FontWeight.w400,
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Bottom Mini Control Bar on Transcript Page
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                // Back to Controls button
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    _pageController.animateToPage(
+                      0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  },
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back_ios_rounded, size: 14, color: Color(0xFF58ACF6)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Kembali ke Kontrol',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF58ACF6)),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const Spacer(),
+
+                // Mini Timer
+                Text(
+                  _formatTimer(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+
+                if (_isRecording) ...[
+                  const SizedBox(width: 14),
+                  // Mini Pause/Resume
+                  InkWell(
+                    onTap: _togglePauseResume,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF58ACF6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                        color: Colors.white,
+                        size: 20,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  // Pause / Resume Button
+                  const SizedBox(width: 8),
+                  // Mini Stop
                   InkWell(
-                    borderRadius: BorderRadius.circular(22),
-                    onTap: _togglePauseResume,
+                    onTap: _stopRecording,
                     child: Container(
-                      width: 86,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF58ACF6),
-                        borderRadius: BorderRadius.circular(22),
+                      width: 34,
+                      height: 34,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
                       ),
-                      child: Center(
+                      child: const Center(
                         child: Icon(
-                          _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          Icons.stop_rounded,
                           color: Colors.white,
-                          size: 38,
+                          size: 20,
                         ),
                       ),
                     ),
                   ),
                 ],
-              ),
-            ],
+              ],
+            ),
+          ),
 
-            const Spacer(flex: 3),
-          ],
-        ),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }
@@ -430,8 +1079,8 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final barWidth = 3.6;
-        final spacing = 4.2;
+        const barWidth = 3.6;
+        const spacing = 4.2;
 
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -442,7 +1091,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
             return Container(
               width: barWidth,
               height: barHeight,
-              margin: EdgeInsets.symmetric(horizontal: spacing / 2),
+              margin: const EdgeInsets.symmetric(horizontal: spacing / 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(2),
@@ -485,7 +1134,7 @@ class _RulerPainter extends CustomPainter {
       ..strokeWidth = 1.3
       ..strokeCap = StrokeCap.round;
 
-    final tickSpacing = 7.5;
+    const tickSpacing = 7.5;
     final totalTicks = (size.width / tickSpacing).ceil();
 
     for (int i = 0; i <= totalTicks; i++) {
@@ -625,6 +1274,8 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
     try {
       final file = File(widget.filePath);
       final fileName = file.uri.pathSegments.last;
+      final isWav = widget.filePath.toLowerCase().endsWith('.wav');
+      final mimeType = isWav ? 'audio/wav' : 'audio/m4a';
 
       // 1. Upload audio file to backend
       final fileUrl = await ref.read(notesListProvider.notifier).uploadAudioFile(
@@ -643,7 +1294,7 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
             durationSeconds: widget.durationSeconds,
             fileUrl: fileUrl,
             fileName: fileName,
-            mimeType: 'audio/m4a',
+            mimeType: mimeType,
             fileSize: await file.length(),
           );
 
