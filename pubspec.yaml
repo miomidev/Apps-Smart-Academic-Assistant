@@ -52,6 +52,8 @@ dependencies:
   record: ^6.2.1
   audioplayers: ^6.1.0
   path_provider: ^2.1.5
+  stt_record:
+    path: packages/stt_record
 
 dependency_overrides:
   permission_handler_android: 13.0.1

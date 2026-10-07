@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:stt_record/stt_record.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../courses/providers/courses_provider.dart';
 import '../models/note_model.dart';
@@ -30,19 +28,14 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   late final PageController _pageController;
   int _currentPageIndex = 0;
 
-  late final AudioRecorder _audioRecorder;
-  late final stt.SpeechToText _speech;
-  StreamSubscription<Amplitude>? _amplitudeSub;
+  late final SttRecord _sttRecord;
+  StreamSubscription<SttRecordTranscript>? _transcriptSub;
+  Timer? _sttAmplitudeTimer;
 
   bool _isRecording = false;
   bool _isPaused = false;
-  String? _recordedFilePath;
 
-  // Speech-to-Text state
-  bool _isSpeechAvailable = false;
-  bool _isSpeechListening = false;
-  String _speechError = '';
-  String _activeLocaleId = 'id_ID';
+  // Real-time transcript state
   String _liveTranscript = '';
   late final TextEditingController _transcriptTextController;
   late final ScrollController _transcriptScrollController;
@@ -59,8 +52,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    _audioRecorder = AudioRecorder();
-    _speech = stt.SpeechToText();
+    _sttRecord = SttRecord();
     _transcriptTextController = TextEditingController();
     _transcriptScrollController = ScrollController();
 
@@ -68,69 +60,13 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     for (int i = 0; i < _maxVisibleBars; i++) {
       _waveAmplitudes.add(0.06);
     }
-
-    // Initialize SpeechToText engine cleanly
-    _initSpeechRecognizer();
-  }
-
-  Future<void> _initSpeechRecognizer() async {
-    try {
-      final available = await _speech.initialize(
-        onError: (err) {
-          debugPrint('STT onError: ${err.errorMsg} (permanent: ${err.permanent})');
-          if (mounted) {
-            setState(() {
-              _speechError = err.errorMsg;
-              _isSpeechListening = false;
-            });
-          }
-        },
-        onStatus: (status) {
-          debugPrint('STT onStatus: $status');
-          if (mounted) {
-            setState(() {
-              _isSpeechListening = status == 'listening';
-            });
-            // Seamlessly resume listening if speech finished a chunk while user is still recording
-            if ((status == 'notListening' || status == 'done') && _isRecording && !_isPaused) {
-              _restartSpeech();
-            }
-          }
-        },
-        debugLogging: false,
-      );
-
-      if (available) {
-        try {
-          final locales = await _speech.locales();
-          final hasId = locales.any((l) => l.localeId.toLowerCase().startsWith('id'));
-          if (hasId) {
-            _activeLocaleId = 'id_ID';
-          } else {
-            final sys = await _speech.systemLocale();
-            if (sys != null && sys.localeId.isNotEmpty) {
-              _activeLocaleId = sys.localeId;
-            }
-          }
-        } catch (_) {}
-      }
-
-      if (mounted) {
-        setState(() {
-          _isSpeechAvailable = available;
-        });
-      }
-    } catch (e) {
-      debugPrint('STT initialize exception: $e');
-    }
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
-    _amplitudeSub?.cancel();
-    _speech.stop();
-    _audioRecorder.dispose();
+    _sttAmplitudeTimer?.cancel();
+    _transcriptSub?.cancel();
     _pageController.dispose();
     _transcriptTextController.dispose();
     _transcriptScrollController.dispose();
@@ -139,72 +75,89 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
 
   Future<void> _startRecording() async {
     // 1. Check microphone permission
-    final hasMic = await _audioRecorder.hasPermission();
+    final hasMic = await _sttRecord.hasPermission();
     if (!hasMic) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
-        );
+      final granted = await _sttRecord.requestPermission();
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
+          );
+        }
+        return;
       }
-      return;
     }
 
     // Reset transcript and timer
     setState(() {
       _liveTranscript = '';
       _transcriptTextController.text = '';
-      _speechError = '';
       _centisecondsElapsed = 0;
     });
 
-    // 2. Start audio file recording using AAC mono
-    final dir = await getApplicationDocumentsDirectory();
-    final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    final filePath = '${dir.path}/$fileName';
-    _recordedFilePath = filePath;
+    // 2. Start recording with SttRecord (captures audio to WAV and streams live Speech-to-Text in parallel)
+    try {
+      _transcriptSub?.cancel();
+      _transcriptSub = _sttRecord.transcripts.listen((data) {
+        if (mounted && data.text.isNotEmpty) {
+          setState(() {
+            _liveTranscript = data.text;
+            _transcriptTextController.text = data.text;
+          });
+          // Auto scroll to bottom as speech text arrives
+          if (_transcriptScrollController.hasClients) {
+            _transcriptScrollController.animateTo(
+              _transcriptScrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            );
+          }
+        }
+      });
 
-    await _audioRecorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
-        numChannels: 1,
-        androidConfig: AndroidRecordConfig(
-          audioSource: AndroidAudioSource.voiceRecognition,
-        ),
-      ),
-      path: filePath,
-    );
+      await _sttRecord.start(
+        localeId: 'id-ID',
+        partialResults: true,
+        enableSystemNotification: false,
+      );
 
-    // 3. Start speech recognition in parallel
-    _startSpeech();
+      // Listen to amplitude for waveform via polling getAmplitude
+      _sttAmplitudeTimer?.cancel();
+      _sttAmplitudeTimer = Timer.periodic(const Duration(milliseconds: 70), (_) async {
+        if (_isPaused || !mounted || !_isRecording) return;
+        final amp = await _sttRecord.getAmplitude();
+        double normalized;
+        if (amp <= 0.03) {
+          normalized = 0.08 + Random().nextDouble() * 0.06;
+        } else {
+          normalized = (amp * 1.5).clamp(0.12, 1.0);
+        }
 
-    // 4. Start timer
+        if (mounted) {
+          setState(() {
+            _waveAmplitudes.add(normalized);
+            if (_waveAmplitudes.length > _maxVisibleBars) {
+              _waveAmplitudes.removeAt(0);
+            }
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('SttRecord start error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memulai perekaman: $e')),
+        );
+      }
+      return;
+    }
+
+    // 3. Start timer
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
       if (!_isPaused && mounted) {
         setState(() => _centisecondsElapsed++);
       }
-    });
-
-    // 5. Listen to amplitude for waveform visualizer
-    _amplitudeSub?.cancel();
-    _amplitudeSub = _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 70)).listen((amp) {
-      if (_isPaused || !mounted) return;
-      final db = amp.current;
-      double normalized;
-      if (db <= -60) {
-        normalized = 0.08 + Random().nextDouble() * 0.07;
-      } else {
-        normalized = (1.0 + (db / 60.0)).clamp(0.12, 1.0);
-      }
-
-      setState(() {
-        _waveAmplitudes.add(normalized);
-        if (_waveAmplitudes.length > _maxVisibleBars) {
-          _waveAmplitudes.removeAt(0);
-        }
-      });
     });
 
     if (mounted) {
@@ -215,83 +168,33 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     }
   }
 
-  void _startSpeech() {
-    if (!_isSpeechAvailable) return;
-    try {
-      _speech.listen(
-        onResult: (result) {
-          if (mounted && result.recognizedWords.isNotEmpty) {
-            setState(() {
-              _liveTranscript = result.recognizedWords;
-              _transcriptTextController.text = result.recognizedWords;
-            });
-            // Auto scroll to bottom
-            if (_transcriptScrollController.hasClients) {
-              _transcriptScrollController.animateTo(
-                _transcriptScrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-              );
-            }
-          }
-        },
-        listenOptions: stt.SpeechListenOptions(
-          localeId: _activeLocaleId,
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-          autoPunctuation: true,
-          enableHapticFeedback: false,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error starting speech recognition: $e');
-    }
-  }
-
-  void _restartSpeech() {
-    if (!_isRecording || _isPaused || !mounted) return;
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (_isRecording && !_isPaused && mounted && !_speech.isListening) {
-        _startSpeech();
-      }
-    });
-  }
-
   Future<void> _togglePauseResume() async {
     if (!_isRecording) return;
     if (_isPaused) {
-      await _audioRecorder.resume();
-      _startSpeech();
+      await _sttRecord.resume();
       setState(() => _isPaused = false);
     } else {
-      await _audioRecorder.pause();
-      await _speech.stop();
+      await _sttRecord.pause();
       setState(() => _isPaused = true);
     }
   }
 
   Future<void> _stopRecording() async {
     _ticker?.cancel();
-    _amplitudeSub?.cancel();
-
-    try {
-      await _speech.stop();
-    } catch (_) {}
+    _sttAmplitudeTimer?.cancel();
+    _transcriptSub?.cancel();
 
     String? finalPath;
     try {
-      finalPath = await _audioRecorder.stop();
-    } catch (_) {
-      finalPath = _recordedFilePath;
+      final stopRes = await _sttRecord.stop();
+      finalPath = stopRes.audioPath;
+    } catch (e) {
+      debugPrint('Error stopping SttRecord: $e');
     }
-
-    finalPath ??= _recordedFilePath;
 
     setState(() {
       _isRecording = false;
       _isPaused = false;
-      _isSpeechListening = false;
     });
 
     if (finalPath != null && mounted) {
@@ -381,8 +284,9 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                     borderRadius: BorderRadius.circular(24),
                     onTap: () async {
                       if (_isRecording) {
-                        await _speech.stop();
-                        await _audioRecorder.stop();
+                        try {
+                          await _sttRecord.cancel();
+                        } catch (_) {}
                       }
                       if (context.mounted) {
                         Navigator.pop(context);
@@ -821,16 +725,12 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: _isRecording
-                      ? (_isPaused
-                          ? const Color(0xFFFEF3C7)
-                          : (_isSpeechListening ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF)))
+                      ? (_isPaused ? const Color(0xFFFEF3C7) : const Color(0xFFECFDF5))
                       : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: _isRecording
-                        ? (_isPaused
-                            ? const Color(0xFFFDE68A)
-                            : (_isSpeechListening ? const Color(0xFFA7F3D0) : const Color(0xFFBFDBFE)))
+                        ? (_isPaused ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0))
                         : const Color(0xFFE2E8F0),
                   ),
                 ),
@@ -842,9 +742,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                       height: 8,
                       decoration: BoxDecoration(
                         color: _isRecording
-                            ? (_isPaused
-                                ? const Color(0xFFD97706)
-                                : (_isSpeechListening ? const Color(0xFF10B981) : const Color(0xFF3B82F6)))
+                            ? (_isPaused ? const Color(0xFFD97706) : const Color(0xFF10B981))
                             : const Color(0xFF94A3B8),
                         shape: BoxShape.circle,
                       ),
@@ -852,17 +750,13 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                     const SizedBox(width: 6),
                     Text(
                       _isRecording
-                          ? (_isPaused
-                              ? 'Perekaman Dijeda'
-                              : (_isSpeechListening ? 'Mendengarkan & Mentranskrip...' : 'Merekam Suara...'))
+                          ? (_isPaused ? 'Perekaman Dijeda' : 'Mentranskrip Suara...')
                           : 'Belum Mulai Merekam',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: _isRecording
-                            ? (_isPaused
-                                ? const Color(0xFFB45309)
-                                : (_isSpeechListening ? const Color(0xFF047857) : const Color(0xFF1E40AF)))
+                            ? (_isPaused ? const Color(0xFFB45309) : const Color(0xFF047857))
                             : const Color(0xFF64748B),
                       ),
                     ),
@@ -937,14 +831,12 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 24),
                             child: Text(
-                              _speechError.isNotEmpty
-                                  ? 'Pengenalan suara sistem: $_speechError.\nAnda tetap dapat mengetik atau mengedit transkrip manual di sini.'
-                                  : 'Bicaralah dengan jelas ke mikrofon. Suara akan otomatis dicatat menjadi teks secara langsung di sini.',
+                              'Bicaralah dengan jelas ke mikrofon. Suara akan otomatis dicatat menjadi teks secara langsung di sini.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 color: Color(0xFF64748B),
                                 height: 1.5,
@@ -1322,6 +1214,8 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
     try {
       final file = File(widget.filePath);
       final fileName = file.uri.pathSegments.last;
+      final isWav = widget.filePath.toLowerCase().endsWith('.wav');
+      final mimeType = isWav ? 'audio/wav' : 'audio/m4a';
 
       // 1. Upload audio file to backend
       final fileUrl = await ref.read(notesListProvider.notifier).uploadAudioFile(
@@ -1340,7 +1234,7 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
             durationSeconds: widget.durationSeconds,
             fileUrl: fileUrl,
             fileName: fileName,
-            mimeType: 'audio/m4a',
+            mimeType: mimeType,
             fileSize: await file.length(),
           );
 
