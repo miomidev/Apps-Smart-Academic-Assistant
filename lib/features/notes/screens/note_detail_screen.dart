@@ -1,7 +1,10 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/config/api_config.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/storage_service.dart';
 import '../../courses/models/course_model.dart';
 import '../../courses/providers/courses_provider.dart';
 import '../models/note_model.dart';
@@ -277,6 +280,15 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
             ),
             const Divider(height: 24),
 
+            // If Voice note with audio file, show Audio Player Card
+            if (widget.note.type == NoteType.voice &&
+                widget.note.fileUrl != null &&
+                widget.note.fileUrl!.isNotEmpty)
+              _VoiceNotePlayerCard(
+                audioUrl: widget.note.fileUrl!,
+                fallbackDurationSeconds: widget.note.durationSeconds,
+              ),
+
             // If Document, show file card
             if (widget.note.type == NoteType.document &&
                 widget.note.fileName != null) ...[
@@ -353,6 +365,211 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _VoiceNotePlayerCard extends ConsumerStatefulWidget {
+  final String audioUrl;
+  final int? fallbackDurationSeconds;
+
+  const _VoiceNotePlayerCard({
+    required this.audioUrl,
+    this.fallbackDurationSeconds,
+  });
+
+  @override
+  ConsumerState<_VoiceNotePlayerCard> createState() => _VoiceNotePlayerCardState();
+}
+
+class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
+  late final AudioPlayer _player;
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _isSourceSet = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = AudioPlayer();
+    if (widget.fallbackDurationSeconds != null) {
+      _duration = Duration(seconds: widget.fallbackDurationSeconds!);
+    }
+
+    _player.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() => _isPlaying = state == PlayerState.playing);
+      }
+    });
+
+    _player.onPositionChanged.listen((pos) {
+      if (mounted) {
+        setState(() => _position = pos);
+      }
+    });
+
+    _player.onDurationChanged.listen((dur) {
+      if (mounted) {
+        setState(() => _duration = dur);
+      }
+    });
+
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _togglePlay() async {
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      if (!_isSourceSet) {
+        final storage = ref.read(storageServiceProvider);
+        final resolvedUrl = ApiConfig.resolveMediaUrl(
+          widget.audioUrl,
+          customBaseUrl: storage.getBaseUrl(),
+        );
+
+        if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
+          await _player.play(UrlSource(resolvedUrl));
+        } else {
+          await _player.play(DeviceFileSource(resolvedUrl));
+        }
+        _isSourceSet = true;
+      } else {
+        await _player.resume();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : (widget.fallbackDurationSeconds ?? 0) * 1000;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: _togglePlay,
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF58ACF6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Rekaman Audio Kuliah',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFDBEAFE)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mic_rounded, size: 14, color: Color(0xFF58ACF6)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Audio',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF58ACF6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (totalMs > 0) ...[
+            const SizedBox(height: 8),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3.5,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                activeTrackColor: const Color(0xFF58ACF6),
+                inactiveTrackColor: const Color(0xFFCBD5E1),
+                thumbColor: const Color(0xFF58ACF6),
+              ),
+              child: Slider(
+                min: 0.0,
+                max: totalMs.toDouble(),
+                value: _position.inMilliseconds.toDouble().clamp(0.0, totalMs.toDouble()),
+                onChanged: (val) async {
+                  final target = Duration(milliseconds: val.toInt());
+                  await _player.seek(target);
+                },
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

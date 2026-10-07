@@ -98,6 +98,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
             onPressed: _showServerConfigDialog,
           ),
+          TextButton(
+            onPressed: () {
+              ref.read(authStateProvider.notifier).loginWithDevBypass();
+              context.go('/');
+            },
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Lewati',
+                  style: TextStyle(
+                    color: Color(0xFF58ACF6),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF58ACF6)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
@@ -191,6 +212,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   label: Text(
                     _isLoading ? 'Menghubungkan...' : 'Masuk sebagai Mahasiswa',
                     style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(authStateProvider.notifier).loginWithDevBypass();
+                    context.go('/');
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF58ACF6),
+                    side: const BorderSide(color: Color(0xFF58ACF6), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: const Text(
+                    'Lewati (Masuk ke Catatan)',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                 ),
               ),

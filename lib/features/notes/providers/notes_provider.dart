@@ -69,6 +69,10 @@ class NotesNotifier extends StateNotifier<AsyncValue<List<NoteModel>>> {
     NoteType type = NoteType.voice,
     String? language = 'id-ID',
     int? durationSeconds,
+    String? fileUrl,
+    String? fileName,
+    String? mimeType,
+    int? fileSize,
     String? suggestedCourseId,
     double? confidenceScore,
   }) async {
@@ -85,6 +89,10 @@ class NotesNotifier extends StateNotifier<AsyncValue<List<NoteModel>>> {
           'type': NoteModel.typeToString(type),
           if (language != null) 'language': language,
           if (durationSeconds != null) 'durationSeconds': durationSeconds,
+          if (fileUrl != null) 'fileUrl': fileUrl,
+          if (fileName != null) 'fileName': fileName,
+          if (mimeType != null) 'mimeType': mimeType,
+          if (fileSize != null) 'fileSize': fileSize,
           if (suggestedCourseId != null) 'suggestedCourseId': suggestedCourseId,
           if (confidenceScore != null) 'confidenceScore': confidenceScore,
         },
@@ -96,6 +104,29 @@ class NotesNotifier extends StateNotifier<AsyncValue<List<NoteModel>>> {
       return newNote;
     } catch (e) {
       rethrow;
+    }
+  }
+
+  Future<String?> uploadAudioFile({
+    required String filePath,
+    required String fileName,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          filePath,
+          filename: fileName,
+        ),
+      });
+
+      final res = await _apiClient.uploadFile<Map<String, dynamic>>(
+        '/notes/upload',
+        formData: formData,
+        fromData: (data) => data as Map<String, dynamic>,
+      );
+      return res['fileUrl'] as String?;
+    } catch (e) {
+      return null;
     }
   }
 

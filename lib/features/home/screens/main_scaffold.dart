@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../core/constants/app_colors.dart';
-import '../../courses/screens/courses_screen.dart';
 import '../../focus/screens/focus_screen.dart';
 import '../../notes/screens/notes_screen.dart';
 import '../../schedules/screens/schedules_screen.dart';
-import 'home_screen.dart';
 
 class MainScaffold extends StatefulWidget {
   final int initialIndex;
@@ -21,64 +18,100 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   late int _currentIndex;
 
-  late final List<Widget> _pages;
+  final List<Widget> _pages = const [
+    NotesScreen(),
+    SchedulesScreen(),
+    FocusScreen(),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    _pages = [
-      HomeScreen(
-        onNavigateTab: (index) {
-          if (mounted) setState(() => _currentIndex = index);
-        },
-      ),
-      const CoursesScreen(),
-      const NotesScreen(),
-      const SchedulesScreen(),
-      const FocusScreen(),
-    ];
+    _currentIndex = widget.initialIndex.clamp(0, 2);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) {
-          setState(() => _currentIndex = idx);
-        },
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.primary.withValues(alpha: 0.15),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home, color: AppColors.primary),
-            label: 'Beranda',
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: Color(0xFFF1F5F9),
+              width: 1.0,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school, color: AppColors.primary),
-            label: 'Matkul',
+        ),
+        padding: const EdgeInsets.only(top: 8, bottom: 12),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(
+                index: 0,
+                label: 'Catatan',
+                icon: Icons.menu_book_rounded,
+              ),
+              _buildNavItem(
+                index: 1,
+                label: 'Tugas',
+                icon: Icons.assignment_outlined,
+              ),
+              _buildNavItem(
+                index: 2,
+                label: 'Fokus',
+                icon: Icons.hourglass_empty_rounded,
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.note_alt_outlined),
-            selectedIcon: Icon(Icons.note_alt, color: AppColors.primary),
-            label: 'Catatan',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required int index,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _currentIndex == index;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _currentIndex = index),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 58,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF58ACF6) : Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                size: 22,
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today, color: AppColors.primary),
-            label: 'Jadwal',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.timer_outlined),
-            selectedIcon: Icon(Icons.timer, color: AppColors.primary),
-            label: 'Fokus',
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+              color: const Color(0xFF1E293B),
+            ),
           ),
         ],
       ),

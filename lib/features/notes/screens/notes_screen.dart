@@ -18,9 +18,14 @@ class NotesScreen extends ConsumerStatefulWidget {
 }
 
 class _NotesScreenState extends ConsumerState<NotesScreen> {
-  String _filterType = 'ALL'; // ALL, VOICE, DOCUMENT
-  String? _filterCourseId;
+  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickAndUploadDocument() async {
     final files = await FilePicker.pickFiles(
@@ -41,6 +46,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setDialogState) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('Upload Dokumen Catatan'),
             content: SingleChildScrollView(
               child: Column(
@@ -49,9 +55,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 children: [
                   TextField(
                     controller: titleController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Judul Catatan',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -61,10 +67,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   DropdownButtonFormField<String?>(
                     initialValue: selectedCourseId,
                     isExpanded: true,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
                     items: [
                       const DropdownMenuItem(
@@ -92,6 +97,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(ctx).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF58ACF6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 child: const Text('Upload'),
               ),
             ],
@@ -135,43 +145,55 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   void _showAddOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
               ListTile(
                 leading: Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: const Color(0xFF58ACF6).withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.mic, color: AppColors.primary),
+                  child: const Icon(Icons.mic_rounded, color: Color(0xFF58ACF6), size: 26),
                 ),
-                title: const Text('Rekam Suara (AI Auto-Tag)'),
-                subtitle: const Text('Transkrip otomatis & deteksi mata kuliah'),
+                title: const Text('Merekam Suara', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                subtitle: const Text('Rekam audio & auto-transkrip pintar ke materi kuliah'),
+                trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   context.push('/notes/voice');
                 },
               ),
+              const Divider(height: 12),
               ListTile(
                 leading: Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.secondary.withValues(alpha: 0.1),
+                    color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.upload_file, color: AppColors.secondary),
+                  child: const Icon(Icons.upload_file_rounded, color: Color(0xFF0284C7), size: 26),
                 ),
-                title: const Text('Upload Dokumen'),
-                subtitle: const Text('PDF, DOCX materi perkuliahan'),
+                title: const Text('Upload Dokumen', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                subtitle: const Text('PDF, DOCX materi kuliah'),
+                trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   _pickAndUploadDocument();
@@ -190,190 +212,222 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final courses = ref.watch(coursesListProvider).value ?? [];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Catatan Perkuliahan'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(notesListProvider.notifier).loadNotes(),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search & Filter header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Cari catatan...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surfaceVariant,
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 12),
+              // Header Row: Catatan & Avatar
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Catatan',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.5,
                     ),
-                    onChanged: (val) => setState(() => _searchQuery = val),
                   ),
-                ),
-                const SizedBox(width: 8),
-                PopupMenuButton<String?>(
-                  icon: Icon(
-                    Icons.filter_list,
-                    color: _filterCourseId != null
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
+                  Container(
+                    padding: const EdgeInsets.all(2.5),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF58ACF6),
+                    ),
+                    child: const CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Color(0xFFE2E8F0),
+                      child: Icon(Icons.person, color: Color(0xFF64748B), size: 24),
+                    ),
                   ),
-                  tooltip: 'Filter Mata Kuliah',
-                  onSelected: (val) => setState(() => _filterCourseId = val),
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(
-                      value: null,
-                      child: Text('Semua Mata Kuliah'),
-                    ),
-                    ...courses.map(
-                      (c) => PopupMenuItem(
-                        value: c.id,
-                        child: Text(c.name),
-                      ),
-                    ),
-                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Search Bar (Rounded pill shape)
+              Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                  color: Colors.white,
                 ),
-              ],
-            ),
-          ),
-
-          // Type Segment Filter
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _buildTypeChip('ALL', 'Semua'),
-                const SizedBox(width: 8),
-                _buildTypeChip('VOICE', 'Suara / AI'),
-                const SizedBox(width: 8),
-                _buildTypeChip('DOCUMENT', 'Dokumen'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Notes List
-          Expanded(
-            child: notesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(
                   children: [
-                    Text('Gagal: $err'),
-                    ElevatedButton(
-                      onPressed: () =>
-                          ref.read(notesListProvider.notifier).loadNotes(),
-                      child: const Text('Coba Lagi'),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Cari catatan...',
+                          hintStyle: TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        onChanged: (val) => setState(() => _searchQuery = val),
+                      ),
                     ),
+                    const Icon(Icons.search, color: Color(0xFF94A3B8), size: 22),
                   ],
                 ),
               ),
-              data: (notes) {
-                // Apply filters
-                final filtered = notes.where((n) {
-                  if (_filterType == 'VOICE' && n.type != NoteType.voice) {
-                    return false;
-                  }
-                  if (_filterType == 'DOCUMENT' && n.type != NoteType.document) {
-                    return false;
-                  }
-                  if (_filterCourseId != null && n.courseId != _filterCourseId) {
-                    return false;
-                  }
-                  if (_searchQuery.isNotEmpty) {
-                    final q = _searchQuery.toLowerCase();
-                    final matchTitle = n.title.toLowerCase().contains(q);
-                    final matchContent =
-                        n.content?.toLowerCase().contains(q) ?? false;
-                    return matchTitle || matchContent;
-                  }
-                  return true;
-                }).toList();
+              const SizedBox(height: 20),
 
-                if (filtered.isEmpty) {
-                  return Center(
+              // Content Area: Empty State or Notes List
+              Expanded(
+                child: notesAsync.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF58ACF6)),
+                  ),
+                  error: (err, _) => Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.note_alt_outlined,
-                          size: 64,
-                          color: AppColors.neutral300,
-                        ),
+                        Text('Gagal memuat: $err', textAlign: TextAlign.center),
                         const SizedBox(height: 12),
-                        const Text(
-                          'Belum ada catatan',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Rekam suara dosen atau unggah dokumen materi Anda',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: () => context.push('/notes/voice'),
-                          icon: const Icon(Icons.mic),
-                          label: const Text('Mulai Rekam Suara'),
+                        ElevatedButton(
+                          onPressed: () => ref.read(notesListProvider.notifier).loadNotes(),
+                          child: const Text('Coba Lagi'),
                         ),
                       ],
                     ),
-                  );
-                }
+                  ),
+                  data: (notes) {
+                    final filtered = notes.where((n) {
+                      if (_searchQuery.isNotEmpty) {
+                        final q = _searchQuery.toLowerCase();
+                        final matchTitle = n.title.toLowerCase().contains(q);
+                        final matchContent = n.content?.toLowerCase().contains(q) ?? false;
+                        return matchTitle || matchContent;
+                      }
+                      return true;
+                    }).toList();
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: filtered.length,
-                  itemBuilder: (ctx, i) {
-                    final note = filtered[i];
-                    return _buildNoteCard(note, courses);
+                    if (filtered.isEmpty) {
+                      return _buildEmptyStateCard();
+                    }
+
+                    return RefreshIndicator(
+                      onRefresh: () => ref.read(notesListProvider.notifier).loadNotes(),
+                      color: const Color(0xFF58ACF6),
+                      child: ListView.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (context, index) => const SizedBox(height: 12),
+                        itemBuilder: (ctx, i) {
+                          final note = filtered[i];
+                          return _buildNoteCard(note, courses);
+                        },
+                      ),
+                    );
                   },
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddOptions,
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Catatan'),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 8, right: 4),
+        child: SizedBox(
+          width: 66,
+          height: 66,
+          child: FloatingActionButton(
+            backgroundColor: const Color(0xFF58ACF6),
+            elevation: 4,
+            shape: const CircleBorder(),
+            onPressed: _showAddOptions,
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 38),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildTypeChip(String key, String label) {
-    final isSelected = _filterType == key;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (_) => setState(() => _filterType = key),
-      selectedColor: AppColors.primary,
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.white : AppColors.textPrimary,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        fontSize: 12,
+  // Empty state card matching Screenshot 1
+  Widget _buildEmptyStateCard() {
+    return SingleChildScrollView(
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.symmetric(vertical: 42, horizontal: 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFDDF0FF),
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Layered Tilted Folder with Plus Illustration
+            SizedBox(
+              width: 110,
+              height: 105,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Back tilted card
+                  Transform.rotate(
+                    angle: 0.18,
+                    child: Container(
+                      width: 74,
+                      height: 88,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF58ACF6).withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                  ),
+                  // Front card
+                  Transform.rotate(
+                    angle: -0.05,
+                    child: Container(
+                      width: 76,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE9F4FE).withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF58ACF6).withValues(alpha: 0.25),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add_rounded,
+                          size: 44,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Catatan kamu masih kosong.\nBuat catatan baru di bawah.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1E293B),
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -381,135 +435,110 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   Widget _buildNoteCard(NoteModel note, List<CourseModel> courses) {
     final course = courses.firstWhere(
       (c) => c.id == note.courseId,
-      orElse: () => CourseModel(
-        id: '',
-        name: note.course?.name ?? 'Tanpa Mata Kuliah',
-        colorHex: note.course?.colorHex ?? '#94A3B8',
-      ),
+      orElse: () => CourseModel(id: '', name: 'Umum', colorHex: '#58ACF6'),
     );
 
-    final isVoice = note.type == NoteType.voice;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 0,
-      color: AppColors.surfaceVariant,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (ctx) => NoteDetailScreen(note: note),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => NoteDetailScreen(note: note),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: note.type == NoteType.voice
+                    ? const Color(0xFF58ACF6).withValues(alpha: 0.15)
+                    : const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: Icon(
+                  note.type == NoteType.voice
+                      ? Icons.mic_rounded
+                      : Icons.description_rounded,
+                  color: note.type == NoteType.voice
+                      ? const Color(0xFF0284C7)
+                      : const Color(0xFF0369A1),
+                  size: 24,
+                ),
+              ),
             ),
-          );
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top row: Course chip + Type badge
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: AppColors.fromHex(course.colorHex),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    course.name,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.fromHex(course.colorHex),
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    isVoice ? Icons.mic : Icons.description,
-                    size: 16,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    isVoice
-                        ? (note.durationSeconds != null
-                            ? '${note.durationSeconds}s'
-                            : 'Voice')
-                        : 'Doc',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // Title
-              Text(
-                note.title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-
-              // Content snippet
-              if (note.content != null && note.content!.isNotEmpty)
-                Text(
-                  note.content!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-
-              const SizedBox(height: 12),
-
-              // Date
-              Row(
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(note.createdAt),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.neutral400,
+                    note.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
-                  if (note.confidenceScore != null) ...[
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
+                  const SizedBox(height: 4),
+                  if (note.content != null && note.content!.isNotEmpty)
+                    Text(
+                      note.content!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF64748B),
+                        height: 1.3,
                       ),
-                      child: Text(
-                        'AI: ${(note.confidenceScore! * 100).toInt()}%',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          course.name,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      if (note.durationSeconds != null) ...[
+                        const Icon(Icons.timer_outlined, size: 12, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${note.durationSeconds}s',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        DateFormat('d MMM', 'id_ID').format(note.createdAt),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

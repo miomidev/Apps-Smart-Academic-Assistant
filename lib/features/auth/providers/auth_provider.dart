@@ -59,13 +59,29 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     state = const AsyncValue.loading();
     try {
       await _storageService.setToken(ApiConfig.devToken);
-      final user = await _apiClient.get<UserModel>(
-        '/me',
-        fromData: (data) => UserModel.fromJson(data as Map<String, dynamic>),
-      );
-      await _storageService.setCachedUserJson(jsonEncode(user.toJson()));
-      state = AsyncValue.data(user);
-      return true;
+      try {
+        final user = await _apiClient.get<UserModel>(
+          '/me',
+          fromData: (data) => UserModel.fromJson(data as Map<String, dynamic>),
+        );
+        await _storageService.setCachedUserJson(jsonEncode(user.toJson()));
+        state = AsyncValue.data(user);
+        return true;
+      } catch (_) {
+        // Fallback local dev user if backend is not running or unreachable
+        final devUser = UserModel(
+          id: 'dev-user-local',
+          firebaseUid: 'dev-uid',
+          email: 'mahasiswa@unsil.ac.id',
+          name: 'Mahasiswa Mode Dev',
+          timezone: 'Asia/Jakarta',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        await _storageService.setCachedUserJson(jsonEncode(devUser.toJson()));
+        state = AsyncValue.data(devUser);
+        return true;
+      }
     } catch (e, st) {
       state = AsyncValue.error(
         e is ApiException ? e.message : 'Gagal login dev bypass: $e',

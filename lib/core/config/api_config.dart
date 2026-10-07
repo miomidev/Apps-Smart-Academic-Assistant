@@ -18,4 +18,17 @@ class ApiConfig {
     }
     return 'http://localhost:3000/api/v1';
   }
+
+  static String resolveMediaUrl(String path, {String? customBaseUrl}) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final base = customBaseUrl ?? getDefaultBaseUrl();
+    final uri = Uri.tryParse(base);
+    if (uri != null && uri.hasAuthority) {
+      final origin = '${uri.scheme}://${uri.authority}';
+      return '$origin${path.startsWith('/') ? path : '/$path'}';
+    }
+    return path;
+  }
 }

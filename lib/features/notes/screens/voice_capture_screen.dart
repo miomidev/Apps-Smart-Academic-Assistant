@@ -1,11 +1,17 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/constants/app_colors.dart';
+import '../../courses/providers/courses_provider.dart';
+import '../models/note_model.dart';
 import '../providers/notes_provider.dart';
-import '../widgets/auto_tag_sheet.dart';
 
 class VoiceCaptureScreen extends ConsumerStatefulWidget {
   final String? preselectedCourseId;
@@ -19,228 +25,632 @@ class VoiceCaptureScreen extends ConsumerStatefulWidget {
   ConsumerState<VoiceCaptureScreen> createState() => _VoiceCaptureScreenState();
 }
 
-class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen>
-    with SingleTickerProviderStateMixin {
+class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
+  late final AudioRecorder _audioRecorder;
   late final stt.SpeechToText _speech;
-  final TextEditingController _titleController =
-      TextEditingController(text: 'Catatan Suara');
-  final TextEditingController _transcriptController = TextEditingController();
+  StreamSubscription<Amplitude>? _amplitudeSub;
 
-  bool _isSpeechInitialized = false;
   bool _isRecording = false;
   bool _isPaused = false;
-  bool _isProcessing = false;
-  String _selectedLocaleId = 'id_ID';
+  String? _recordedFilePath;
 
-  Timer? _durationTimer;
-  int _secondsRecorded = 0;
+  // Waveform data
+  final List<double> _waveAmplitudes = [];
+  final int _maxVisibleBars = 45;
 
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  // Timer: centiseconds (1/100 second)
+  Timer? _ticker;
+  int _centisecondsElapsed = 0;
+
+  // Live Speech to Text transcript
+  String _liveTranscript = '';
+  bool _isSpeechInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    _audioRecorder = AudioRecorder();
     _speech = stt.SpeechToText();
-    _initPulseAnimation();
-    _initSpeech();
+    _initAndStartRecording();
   }
 
-  void _initPulseAnimation() {
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.25).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _amplitudeSub?.cancel();
+    _audioRecorder.dispose();
+    _speech.stop();
+    super.dispose();
   }
 
-  Future<void> _initSpeech() async {
-    final status = await Permission.microphone.request();
-    if (status.isGranted) {
-      final available = await _speech.initialize(
+  Future<void> _initAndStartRecording() async {
+    // 1. Check microphone permission
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Izin mikrofon diperlukan untuk merekam.')),
+        );
+        Navigator.pop(context);
+      }
+      return;
+    }
+
+    // 2. Initialize SpeechToText for live transcript in background
+    try {
+      _isSpeechInitialized = await _speech.initialize(
+        onError: (err) {},
         onStatus: (status) {
-          // Restart loop: Android speech engine stops after silence timeout (~30s)
-          if ((status == 'done' || status == 'notListening') &&
-              _isRecording &&
-              !_isPaused) {
-            _restartListening();
-          }
-        },
-        onError: (error) {
-          if (_isRecording && !_isPaused) {
-            _restartListening();
+          if ((status == 'done' || status == 'notListening') && _isRecording && !_isPaused) {
+            _restartSpeech();
           }
         },
       );
-      if (mounted) {
-        setState(() => _isSpeechInitialized = available);
+    } catch (_) {}
+
+    // 3. Start audio file recording
+    final dir = await getApplicationDocumentsDirectory();
+    final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final filePath = '${dir.path}/$fileName';
+    _recordedFilePath = filePath;
+
+    await _audioRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      ),
+      path: filePath,
+    );
+
+    // 4. Start speech recognition
+    _startSpeech();
+
+    // 5. Start timer
+    _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
+      if (!_isPaused && mounted) {
+        setState(() => _centisecondsElapsed++);
       }
+    });
+
+    // 6. Listen to real-time amplitude for visualizer
+    _amplitudeSub = _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 70)).listen((amp) {
+      if (_isPaused || !mounted) return;
+      // amp.current is in dBFS (-160 to 0). Normalize to 0.05 .. 1.0
+      final db = amp.current;
+      double normalized;
+      if (db <= -60) {
+        normalized = 0.08 + Random().nextDouble() * 0.07;
+      } else {
+        normalized = (1.0 + (db / 60.0)).clamp(0.12, 1.0);
+      }
+
+      setState(() {
+        _waveAmplitudes.add(normalized);
+        if (_waveAmplitudes.length > _maxVisibleBars) {
+          _waveAmplitudes.removeAt(0);
+        }
+      });
+    });
+
+    if (mounted) {
+      setState(() => _isRecording = true);
     }
   }
 
-  void _restartListening() {
-    if (!_isRecording || _isPaused || !mounted) return;
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (_isRecording && !_isPaused && mounted) {
-        _startListening();
-      }
-    });
-  }
-
-  Future<void> _startListening() async {
+  void _startSpeech() {
     if (!_isSpeechInitialized) return;
-
     try {
-      await _speech.listen(
+      _speech.listen(
         onResult: (result) {
-          if (result.recognizedWords.isNotEmpty && mounted) {
+          if (mounted && result.recognizedWords.isNotEmpty) {
             setState(() {
-              // Append to existing text or update latest words
-              if (_transcriptController.text.isEmpty) {
-                _transcriptController.text = result.recognizedWords;
-              } else if (!result.finalResult) {
-                // Live preview
-              } else {
-                _transcriptController.text =
-                    '${_transcriptController.text.trim()} ${result.recognizedWords}';
-              }
+              _liveTranscript = result.recognizedWords;
             });
           }
         },
         listenOptions: stt.SpeechListenOptions(
           listenMode: stt.ListenMode.dictation,
-          cancelOnError: false,
           partialResults: true,
-          localeId: _selectedLocaleId,
         ),
       );
     } catch (_) {}
   }
 
-  void _toggleRecording() async {
-    if (!_isSpeechInitialized) {
-      await _initSpeech();
-      if (!_isSpeechInitialized) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Izin mikrofon diperlukan.')),
-          );
-        }
-        return;
+  void _restartSpeech() {
+    if (!_isRecording || _isPaused || !mounted) return;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_isRecording && !_isPaused && mounted) {
+        _startSpeech();
       }
-    }
-
-    if (!_isRecording) {
-      // Start recording
-      setState(() {
-        _isRecording = true;
-        _isPaused = false;
-        _secondsRecorded = 0;
-      });
-      _startListening();
-      _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!_isPaused && mounted) {
-          setState(() => _secondsRecorded++);
-        }
-      });
-    } else {
-      // Stop recording
-      _stopRecording();
-    }
+    });
   }
 
-  void _pauseOrResume() {
+  Future<void> _togglePauseResume() async {
     if (!_isRecording) return;
-    setState(() => _isPaused = !_isPaused);
     if (_isPaused) {
-      _speech.stop();
+      await _audioRecorder.resume();
+      _startSpeech();
+      setState(() => _isPaused = false);
     } else {
-      _startListening();
+      await _audioRecorder.pause();
+      _speech.stop();
+      setState(() => _isPaused = true);
     }
   }
 
   Future<void> _stopRecording() async {
-    _durationTimer?.cancel();
-    await _speech.stop();
+    _ticker?.cancel();
+    _amplitudeSub?.cancel();
+    _speech.stop();
+
+    String? finalPath;
+    try {
+      finalPath = await _audioRecorder.stop();
+    } catch (_) {
+      finalPath = _recordedFilePath;
+    }
+
     setState(() {
       _isRecording = false;
       _isPaused = false;
     });
+
+    if (finalPath != null && mounted) {
+      _showSaveSheet(finalPath);
+    }
   }
 
-  String _formatDuration(int seconds) {
-    final m = (seconds ~/ 60).toString().padLeft(2, '0');
-    final s = (seconds % 60).toString().padLeft(2, '0');
-    return '$m:$s';
+  void _showSaveSheet(String filePath) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => _SaveAudioNoteSheet(
+        filePath: filePath,
+        durationSeconds: (_centisecondsElapsed / 100).ceil(),
+        initialTranscript: _liveTranscript,
+        preselectedCourseId: widget.preselectedCourseId,
+        onSaved: () {
+          Navigator.of(ctx).pop(); // close sheet
+          Navigator.of(context).pop(); // back to Catatan
+        },
+      ),
+    );
   }
 
-  Future<void> _onFinishAndSave() async {
-    await _stopRecording();
+  String _formatTimer() {
+    final totalCentis = _centisecondsElapsed;
+    final minutes = (totalCentis ~/ 6000).toString().padLeft(2, '0');
+    final seconds = ((totalCentis % 6000) ~/ 100).toString().padLeft(2, '0');
+    final centis = (totalCentis % 100).toString().padLeft(2, '0');
+    return '$minutes.$seconds.$centis';
+  }
 
-    final text = _transcriptController.text.trim();
-    if (text.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Transkrip kosong. Ucapkan sesuatu terlebih dahulu.')),
-        );
-      }
-      return;
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            // Header Row: Merekam & Tombol Close
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Merekam',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () {
+                      _stopRecording();
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF58ACF6),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Spacer(flex: 2),
+
+            // Waveform & Audio Ruler Visualizer
+            SizedBox(
+              height: 220,
+              width: double.infinity,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Top Ruler
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _AudioRuler(isTop: true),
+                  ),
+
+                  // Waveform Bars
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: _buildWaveformBars(),
+                  ),
+
+                  // Bottom Ruler
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: _AudioRuler(isTop: false),
+                  ),
+
+                  // Central Red Indicator Needle with 2 Dots (Exact Match)
+                  Positioned(
+                    top: 2,
+                    bottom: 2,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Top Dot
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFF87171),
+                          ),
+                        ),
+                        // Needle Line
+                        Expanded(
+                          child: Container(
+                            width: 2.2,
+                            color: const Color(0xFFF87171),
+                          ),
+                        ),
+                        // Bottom Dot
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFF87171),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            // Timer (MM.SS.cc)
+            Text(
+              _formatTimer(),
+              style: const TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF0F172A),
+                letterSpacing: 1.0,
+              ),
+            ),
+
+            const Spacer(flex: 2),
+
+            // Live Transcript preview if any
+            if (_liveTranscript.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+                child: Text(
+                  '"$_liveTranscript"',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ),
+
+            // Recording Controls: Stop & Pause
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Stop Button
+                InkWell(
+                  borderRadius: BorderRadius.circular(22),
+                  onTap: _stopRecording,
+                  child: Container(
+                    width: 86,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF58ACF6),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Pause / Resume Button
+                InkWell(
+                  borderRadius: BorderRadius.circular(22),
+                  onTap: _togglePauseResume,
+                  child: Container(
+                    width: 86,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF58ACF6),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                        color: Colors.white,
+                        size: 38,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const Spacer(flex: 3),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaveformBars() {
+    // Generate bars to display
+    final bars = List<double>.from(_waveAmplitudes);
+    while (bars.length < _maxVisibleBars) {
+      bars.insert(0, 0.06);
     }
 
-    setState(() => _isProcessing = true);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final barWidth = 3.6;
+        final spacing = 4.2;
 
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: bars.map((amp) {
+            final barHeight = (amp * 130).clamp(6.0, 130.0);
+
+            return Container(
+              width: barWidth,
+              height: barHeight,
+              margin: EdgeInsets.symmetric(horizontal: spacing / 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+// Audio Ruler with fine vertical tick marks matching Screenshot 2
+class _AudioRuler extends StatelessWidget {
+  final bool isTop;
+
+  const _AudioRuler({required this.isTop});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 18,
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _RulerPainter(isTop: isTop),
+      ),
+    );
+  }
+}
+
+class _RulerPainter extends CustomPainter {
+  final bool isTop;
+
+  _RulerPainter({required this.isTop});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF93C5FD)
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+
+    final tickSpacing = 7.5;
+    final totalTicks = (size.width / tickSpacing).ceil();
+
+    for (int i = 0; i <= totalTicks; i++) {
+      final x = i * tickSpacing;
+      final isMajor = i % 5 == 0;
+      final tickHeight = isMajor ? 14.0 : 8.0;
+
+      if (isTop) {
+        canvas.drawLine(Offset(x, 0), Offset(x, tickHeight), paint);
+      } else {
+        canvas.drawLine(Offset(x, size.height), Offset(x, size.height - tickHeight), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// Bottom sheet to preview audio playback, edit transcript, and save note
+class _SaveAudioNoteSheet extends ConsumerStatefulWidget {
+  final String filePath;
+  final int durationSeconds;
+  final String initialTranscript;
+  final String? preselectedCourseId;
+  final VoidCallback onSaved;
+
+  const _SaveAudioNoteSheet({
+    required this.filePath,
+    required this.durationSeconds,
+    required this.initialTranscript,
+    this.preselectedCourseId,
+    required this.onSaved,
+  });
+
+  @override
+  ConsumerState<_SaveAudioNoteSheet> createState() => _SaveAudioNoteSheetState();
+}
+
+class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _transcriptController;
+  late final AudioPlayer _player;
+
+  String? _selectedCourseId;
+  bool _isPlaying = false;
+  Duration _currentPosition = Duration.zero;
+  Duration _totalDuration = Duration.zero;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: 'Catatan Rekaman ${DateFormat('d MMM, HH:mm').format(DateTime.now())}',
+    );
+    _transcriptController = TextEditingController(text: widget.initialTranscript);
+    _selectedCourseId = widget.preselectedCourseId;
+
+    _player = AudioPlayer();
+    _initAudioPlayer();
+  }
+
+  Future<void> _initAudioPlayer() async {
+    _player.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() => _isPlaying = state == PlayerState.playing);
+      }
+    });
+
+    _player.onPositionChanged.listen((pos) {
+      if (mounted) {
+        setState(() => _currentPosition = pos);
+      }
+    });
+
+    _player.onDurationChanged.listen((dur) {
+      if (mounted) {
+        setState(() => _totalDuration = dur);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    _titleController.dispose();
+    _transcriptController.dispose();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _togglePlayPreview() async {
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      await _player.play(DeviceFileSource(widget.filePath));
+    }
+  }
+
+  Future<void> _handleSave() async {
+    setState(() => _isSaving = true);
     try {
-      // Step 1: AI Course Suggestion
-      final autoTagResult = await ref.read(notesListProvider.notifier).suggestCourse(
-            content: text,
-            createdAt: DateTime.now(),
+      final file = File(widget.filePath);
+      final fileName = file.uri.pathSegments.last;
+
+      // 1. Upload audio file to backend
+      final fileUrl = await ref.read(notesListProvider.notifier).uploadAudioFile(
+            filePath: widget.filePath,
+            fileName: fileName,
           );
 
-      if (!mounted) return;
-      setState(() => _isProcessing = false);
-
-      // Step 2: Show Auto-Tagging Bottom Sheet
-      final chosenCourseId = await AutoTagSheet.show(
-        context,
-        autoTagResult: autoTagResult,
-        initialCourseId: widget.preselectedCourseId,
-      );
-
-      // Step 3: Save to backend
-      if (!mounted) return;
-      setState(() => _isProcessing = true);
-
-      final title = _titleController.text.trim().isEmpty
-          ? 'Catatan Suara ${_formatDuration(_secondsRecorded)}'
-          : _titleController.text.trim();
-
+      // 2. Create note in backend
       await ref.read(notesListProvider.notifier).createNote(
-            title: title,
-            content: text,
-            courseId: chosenCourseId,
-            durationSeconds: _secondsRecorded,
-            suggestedCourseId: autoTagResult?.suggestedCourseId,
-            confidenceScore: autoTagResult?.confidenceScore,
-            language: _selectedLocaleId,
+            title: _titleController.text.trim(),
+            content: _transcriptController.text.trim().isNotEmpty
+                ? _transcriptController.text.trim()
+                : 'Hasil rekaman audio (${widget.durationSeconds} detik)',
+            type: NoteType.voice,
+            courseId: _selectedCourseId,
+            durationSeconds: widget.durationSeconds,
+            fileUrl: fileUrl,
+            fileName: fileName,
+            mimeType: 'audio/m4a',
+            fileSize: await file.length(),
           );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Catatan suara berhasil disimpan!'),
+            content: Text('Catatan rekaman suara berhasil disimpan!'),
             backgroundColor: AppColors.success,
           ),
         );
-        Navigator.of(context).pop();
+        widget.onSaved();
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isProcessing = false);
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal menyimpan: $e'),
+            content: Text('Gagal menyimpan catatan: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -249,220 +659,201 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen>
   }
 
   @override
-  void dispose() {
-    _durationTimer?.cancel();
-    _pulseController.dispose();
-    _speech.stop();
-    _titleController.dispose();
-    _transcriptController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Voice Transcription'),
-        actions: [
-          // Language selector
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.language),
-            tooltip: 'Pilih Bahasa',
-            initialValue: _selectedLocaleId,
-            onSelected: (loc) => setState(() => _selectedLocaleId = loc),
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(value: 'id_ID', child: Text('Bahasa Indonesia')),
-              PopupMenuItem(value: 'en_US', child: Text('English (US)')),
-            ],
-          ),
-        ],
+    final courses = ref.watch(coursesListProvider).value ?? [];
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
-      body: _isProcessing
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Menganalisis transkrip dengan AI...'),
-                ],
-              ),
-            )
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    // Title field
-                    TextField(
-                      controller: _titleController,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Judul Catatan...',
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const Divider(height: 24),
-
-                    // Live Transcript Editor
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.neutral200),
-                        ),
-                        child: TextField(
-                          controller: _transcriptController,
-                          maxLines: null,
-                          expands: true,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            height: 1.5,
-                            color: AppColors.textPrimary,
-                          ),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintText: _isRecording
-                                ? 'Mendengarkan perkataan Anda...'
-                                : 'Tekan tombol mikrofon di bawah untuk mulai merekam, atau ketik langsung di sini...',
-                            hintStyle: TextStyle(
-                              color: AppColors.textSecondary.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Timer badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _isRecording
-                            ? AppColors.error.withValues(alpha: 0.1)
-                            : AppColors.neutral200,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_isRecording && !_isPaused)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: const BoxDecoration(
-                                color: AppColors.error,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          Text(
-                            _formatDuration(_secondsRecorded),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: _isRecording
-                                  ? AppColors.error
-                                  : AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Controls Row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Clear
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          iconSize: 28,
-                          color: AppColors.textSecondary,
-                          tooltip: 'Hapus Teks',
-                          onPressed: () {
-                            _transcriptController.clear();
-                            setState(() => _secondsRecorded = 0);
-                          },
-                        ),
-
-                        // Pause / Resume (when recording)
-                        if (_isRecording)
-                          IconButton(
-                            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause),
-                            iconSize: 32,
-                            color: AppColors.primary,
-                            tooltip: _isPaused ? 'Lanjutkan' : 'Jeda',
-                            onPressed: _pauseOrResume,
-                          )
-                        else
-                          const SizedBox(width: 48),
-
-                        // Center Record / Stop Button with Pulse
-                        ScaleTransition(
-                          scale: _isRecording && !_isPaused
-                              ? _pulseAnimation
-                              : const AlwaysStoppedAnimation(1.0),
-                          child: InkWell(
-                            onTap: _toggleRecording,
-                            customBorder: const CircleBorder(),
-                            child: Container(
-                              width: 72,
-                              height: 72,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _isRecording
-                                    ? AppColors.error
-                                    : AppColors.primary,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (_isRecording
-                                            ? AppColors.error
-                                            : AppColors.primary)
-                                        .withValues(alpha: 0.35),
-                                    blurRadius: 16,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                _isRecording ? Icons.stop : Icons.mic,
-                                color: Colors.white,
-                                size: 36,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Done / Save Button
-                        IconButton(
-                          icon: const Icon(Icons.check_circle_outline),
-                          iconSize: 32,
-                          color: AppColors.success,
-                          tooltip: 'Simpan Catatan',
-                          onPressed: _onFinishAndSave,
-                        ),
-
-                        const SizedBox(width: 48),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            const Text(
+              'Simpan Rekaman Suara',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Audio Player Preview Card
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      InkWell(
+                        onTap: _togglePlayPreview,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF58ACF6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Putar Ulang Hasil Rekaman',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                            Text(
+                              '${_formatDuration(_currentPosition)} / ${_formatDuration(_totalDuration.inSeconds > 0 ? _totalDuration : Duration(seconds: widget.durationSeconds))}',
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3.0,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                      activeTrackColor: const Color(0xFF58ACF6),
+                      inactiveTrackColor: const Color(0xFFCBD5E1),
+                      thumbColor: const Color(0xFF58ACF6),
+                    ),
+                    child: Slider(
+                      min: 0.0,
+                      max: (_totalDuration.inMilliseconds > 0
+                              ? _totalDuration.inMilliseconds
+                              : widget.durationSeconds * 1000)
+                          .toDouble(),
+                      value: _currentPosition.inMilliseconds
+                          .toDouble()
+                          .clamp(
+                            0.0,
+                            (_totalDuration.inMilliseconds > 0
+                                    ? _totalDuration.inMilliseconds
+                                    : widget.durationSeconds * 1000)
+                                .toDouble(),
+                          ),
+                      onChanged: (val) async {
+                        final target = Duration(milliseconds: val.toInt());
+                        await _player.seek(target);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Title input
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(
+                labelText: 'Judul Catatan',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Course selection
+            DropdownButtonFormField<String?>(
+              initialValue: _selectedCourseId,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Mata Kuliah (Opsional)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Tanpa Mata Kuliah')),
+                ...courses.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
+              ],
+              onChanged: (val) => setState(() => _selectedCourseId = val),
+            ),
+            const SizedBox(height: 14),
+
+            // Transcript text area
+            TextField(
+              controller: _transcriptController,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: 'Transkrip / Isi Catatan',
+                hintText: 'Tuliskan poin-poin materi atau hasil transkrip...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text('Batal'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _handleSave,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF58ACF6),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Simpan Catatan',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

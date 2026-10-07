@@ -13,7 +13,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
   return GoRouter(
-    initialLocation: '/splash',
+    initialLocation: '/login',
     redirect: (BuildContext context, GoRouterState state) {
       final isLoading = authState.isLoading;
       final isAuthenticated = authState.asData?.value != null;
