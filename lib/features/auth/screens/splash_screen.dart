@@ -26,7 +26,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     authState.when(
       data: (user) {
         if (user != null) {
-          context.go('/home');
+          context.go('/');
         } else {
           context.go('/login');
         }
@@ -38,7 +38,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           next.whenData((user) {
             if (mounted) {
               if (user != null) {
-                context.go('/home');
+                context.go('/');
               } else {
                 context.go('/login');
               }

@@ -16,7 +16,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/splash',
     redirect: (BuildContext context, GoRouterState state) {
       final isLoading = authState.isLoading;
-      final isAuthenticated = authState.value != null;
+      final isAuthenticated = authState.asData?.value != null;
       final location = state.uri.path;
 
       // When splash is checking session, allow splash
@@ -50,6 +50,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final initialIndex = tabParam != null ? int.tryParse(tabParam) ?? 0 : 0;
           return MainScaffold(initialIndex: initialIndex);
         },
+      ),
+      GoRoute(
+        path: '/home',
+        redirect: (context, state) => '/',
       ),
       GoRoute(
         path: '/notes/voice',

@@ -19,10 +19,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _isLoading = true);
     final success =
         await ref.read(authStateProvider.notifier).loginWithDevBypass();
-    setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
 
     if (success && mounted) {
-      context.go('/home');
+      context.go('/');
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
