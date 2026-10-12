@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../../core/constants/app_colors.dart';
 
 class QuickActionsRow extends StatelessWidget {
   final VoidCallback onRecordVoice;
   final VoidCallback onStartFocus;
   final VoidCallback onUploadRps;
-  final VoidCallback onAddCourse;
+  final VoidCallback onViewCourses;
 
   const QuickActionsRow({
     super.key,
     required this.onRecordVoice,
     required this.onStartFocus,
     required this.onUploadRps,
-    required this.onAddCourse,
+    required this.onViewCourses,
   });
 
   @override
@@ -23,26 +22,30 @@ class QuickActionsRow extends StatelessWidget {
         _ActionButton(
           icon: Icons.mic_rounded,
           label: 'Rekam',
-          color: AppColors.primary,
+          color: const Color(0xFF42A5F5),
+          bgColor: const Color(0xFFE3F2FD),
           onTap: onRecordVoice,
         ),
         _ActionButton(
-          icon: Icons.lock_clock_rounded,
+          icon: Icons.hourglass_empty_rounded,
           label: 'Fokus',
           color: const Color(0xFF8B5CF6),
+          bgColor: const Color(0xFFF3E8FF),
           onTap: onStartFocus,
         ),
         _ActionButton(
-          icon: Icons.picture_as_pdf_rounded,
-          label: 'Unggah RPS',
-          color: AppColors.secondary,
+          icon: Icons.upload_file_rounded,
+          label: 'RPS PDF',
+          color: const Color(0xFF0284C7),
+          bgColor: const Color(0xFFE0F2FE),
           onTap: onUploadRps,
         ),
         _ActionButton(
-          icon: Icons.add_circle_outline_rounded,
-          label: 'Tambah MK',
-          color: AppColors.success,
-          onTap: onAddCourse,
+          icon: Icons.menu_book_rounded,
+          label: 'Matkul',
+          color: const Color(0xFF10B981),
+          bgColor: const Color(0xFFD1FAE5),
+          onTap: onViewCourses,
         ),
       ],
     );
@@ -53,12 +56,14 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final Color bgColor;
   final VoidCallback onTap;
 
   const _ActionButton({
     required this.icon,
     required this.label,
     required this.color,
+    required this.bgColor,
     required this.onTap,
   });
 
@@ -66,18 +71,18 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
         width: 78,
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 6,
+              blurRadius: 8,
               offset: const Offset(0, 2),
             ),
           ],
@@ -85,20 +90,23 @@ class _ActionButton extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
+                color: bgColor,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 22),
+              child: Center(
+                child: Icon(icon, color: color, size: 22),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               label,
               style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF212121),
               ),
             ),
           ],

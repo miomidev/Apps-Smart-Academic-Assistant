@@ -34,7 +34,7 @@ class RpsNotifier extends StateNotifier<AsyncValue<RpsExtractionResult?>> {
       });
 
       final result = await _apiClient.uploadFile<RpsExtractionResult>(
-        '/courses/$courseId/parse-rps',
+        '/courses/$courseId/rps/extract',
         formData: formData,
         fromData: (data) =>
             RpsExtractionResult.fromJson(data as Map<String, dynamic>),

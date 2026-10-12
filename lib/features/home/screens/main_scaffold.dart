@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../focus/screens/focus_screen.dart';
 import '../../notes/screens/notes_screen.dart';
 import '../../schedules/screens/schedules_screen.dart';
+import 'home_screen.dart';
 
 class MainScaffold extends StatefulWidget {
   final int initialIndex;
@@ -17,17 +18,20 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   late int _currentIndex;
-
-  final List<Widget> _pages = const [
-    NotesScreen(),
-    SchedulesScreen(),
-    FocusScreen(),
-  ];
+  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex.clamp(0, 2);
+    _currentIndex = widget.initialIndex.clamp(0, 3);
+    _pages = [
+      HomeScreen(onNavigateTab: (idx) {
+        setState(() => _currentIndex = idx.clamp(0, 3));
+      }),
+      const NotesScreen(),
+      const SchedulesScreen(),
+      const FocusScreen(),
+    ];
   }
 
   @override
@@ -56,16 +60,21 @@ class _MainScaffoldState extends State<MainScaffold> {
             children: [
               _buildNavItem(
                 index: 0,
+                label: 'Beranda',
+                icon: Icons.home_rounded,
+              ),
+              _buildNavItem(
+                index: 1,
                 label: 'Catatan',
                 icon: Icons.menu_book_rounded,
               ),
               _buildNavItem(
-                index: 1,
+                index: 2,
                 label: 'Tugas',
                 icon: Icons.assignment_outlined,
               ),
               _buildNavItem(
-                index: 2,
+                index: 3,
                 label: 'Fokus',
                 icon: Icons.hourglass_empty_rounded,
               ),
@@ -93,13 +102,13 @@ class _MainScaffoldState extends State<MainScaffold> {
             width: 58,
             height: 32,
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF58ACF6) : Colors.transparent,
+              color: isSelected ? const Color(0xFF42A5F5) : Colors.transparent,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Center(
               child: Icon(
                 icon,
-                color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                color: isSelected ? Colors.white : const Color(0xFF757575),
                 size: 22,
               ),
             ),
@@ -110,7 +119,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: const Color(0xFF1E293B),
+              color: isSelected ? const Color(0xFF42A5F5) : const Color(0xFF757575),
             ),
           ),
         ],

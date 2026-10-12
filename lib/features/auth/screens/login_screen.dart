@@ -122,25 +122,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
           child: Column(
             children: [
-              const Spacer(flex: 2),
+              const SizedBox(height: 20),
               // App Logo
               Container(
                 width: 88,
                 height: 88,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.accent],
+                    colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.35),
+                      color: const Color(0xFF42A5F5).withValues(alpha: 0.35),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -171,34 +171,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       height: 1.5,
                     ),
               ),
-              const Spacer(flex: 3),
+              const SizedBox(height: 32),
 
               // Feature Badges
-              _FeatureBadge(
+              const _FeatureBadge(
                 icon: Icons.mic_rounded,
                 title: 'Voice Auto-Tag',
                 subtitle: 'Transkripsi bicara langsung tersimpan ke mata kuliah',
               ),
               const SizedBox(height: 12),
-              _FeatureBadge(
+              const _FeatureBadge(
                 icon: Icons.picture_as_pdf_rounded,
                 title: 'RPS Extractor',
                 subtitle: 'Upload PDF RPS, langsung jadi jadwal kuliah 1 semester',
               ),
               const SizedBox(height: 12),
-              _FeatureBadge(
+              const _FeatureBadge(
                 icon: Icons.lock_clock_rounded,
                 title: 'Deep Focus Blocker',
                 subtitle: 'Kunci distraksi hp saat sesi Pomodoro belajar',
               ),
 
-              const Spacer(flex: 4),
+              const SizedBox(height: 36),
 
               // Login Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: _isLoading ? null : _handleLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF42A5F5),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                   icon: _isLoading
                       ? const SizedBox(
                           width: 20,
@@ -211,7 +219,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : const Icon(Icons.school_rounded),
                   label: Text(
                     _isLoading ? 'Menghubungkan...' : 'Masuk sebagai Mahasiswa',
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -224,8 +232,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     context.go('/');
                   },
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF58ACF6),
-                    side: const BorderSide(color: Color(0xFF58ACF6), width: 1.5),
+                    foregroundColor: const Color(0xFF42A5F5),
+                    side: const BorderSide(color: Color(0xFF42A5F5), width: 1.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -233,12 +241,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   icon: const Icon(Icons.arrow_forward_rounded, size: 18),
                   label: const Text(
-                    'Lewati (Masuk ke Catatan)',
+                    'Lewati (Masuk ke Beranda)',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               Text(
                 'Dikembangkan untuk IconFest • Universitas Siliwangi',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(

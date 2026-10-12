@@ -68,6 +68,22 @@ class SchedulesNotifier extends StateNotifier<AsyncValue<List<ScheduleModel>>> {
         },
       );
       state = AsyncValue.data(list);
+
+      // Reschedule local notifications for upcoming uncompleted schedules (PRD 5.2.B)
+      final now = DateTime.now();
+      for (final s in list) {
+        if (!s.isCompleted && s.dueDate.isAfter(now)) {
+          final reminderTime = s.dueDate.subtract(Duration(minutes: s.reminderMinutes));
+          if (reminderTime.isAfter(now)) {
+            _notificationService.scheduleNotification(
+              id: s.id.hashCode,
+              title: 'Pengingat: ${s.title}',
+              body: 'Jadwal dimulai dalam ${s.reminderMinutes} menit',
+              scheduledDate: reminderTime,
+            );
+          }
+        }
+      }
     } catch (e, st) {
       state = AsyncValue.error(
         e is ApiException ? e.message : 'Gagal memuat jadwal: $e',

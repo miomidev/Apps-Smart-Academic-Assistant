@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/services/storage_service.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/onboarding_screen.dart';
 import '../../features/auth/screens/splash_screen.dart';
 import '../../features/focus/screens/focus_stats_screen.dart';
 import '../../features/home/screens/main_scaffold.dart';
 import '../../features/notes/screens/voice_capture_screen.dart';
 import '../../features/rps/screens/rps_upload_screen.dart';
+import '../../features/settings/screens/settings_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
+  final storage = ref.watch(storageServiceProvider);
 
   return GoRouter(
     initialLocation: '/login',
@@ -23,13 +27,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (isLoading) return null;
 
       final isAuthRoute = location == '/login' || location == '/splash';
+      final isOnboardingRoute = location == '/onboarding';
 
       if (!isAuthenticated && !isAuthRoute) {
         return '/login';
       }
 
-      if (isAuthenticated && isAuthRoute) {
-        return '/';
+      if (isAuthenticated) {
+        final hasCompletedOnboarding = storage.isOnboardingCompleted();
+        if (!hasCompletedOnboarding && !isOnboardingRoute) {
+          return '/onboarding';
+        }
+        if (hasCompletedOnboarding && (isAuthRoute || isOnboardingRoute)) {
+          return '/';
+        }
       }
 
       return null;
@@ -42,6 +53,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen(),
       ),
       GoRoute(
         path: '/',
@@ -72,6 +87,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/focus/stats',
         builder: (context, state) => const FocusStatsScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

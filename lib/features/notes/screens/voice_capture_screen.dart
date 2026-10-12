@@ -8,7 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:stt_record/stt_record.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/storage_service.dart';
 import '../../courses/providers/courses_provider.dart';
+import '../models/auto_tag_result.dart';
 import '../models/note_model.dart';
 import '../providers/notes_provider.dart';
 
@@ -24,13 +26,15 @@ class VoiceCaptureScreen extends ConsumerStatefulWidget {
   ConsumerState<VoiceCaptureScreen> createState() => _VoiceCaptureScreenState();
 }
 
-class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
+class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen>
+    with WidgetsBindingObserver {
   late final PageController _pageController;
   int _currentPageIndex = 0;
 
   late final SttRecord _sttRecord;
   StreamSubscription<SttRecordTranscript>? _transcriptSub;
   Timer? _sttAmplitudeTimer;
+  Timer? _draftAutoSaveTimer;
 
   bool _isRecording = false;
   bool _isPaused = false;
@@ -51,6 +55,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: 0);
     _sttRecord = SttRecord();
     _transcriptTextController = TextEditingController();
@@ -60,17 +65,139 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     for (int i = 0; i < _maxVisibleBars; i++) {
       _waveAmplitudes.add(0.06);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPendingDraft();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _sttAmplitudeTimer?.cancel();
     _transcriptSub?.cancel();
+    _draftAutoSaveTimer?.cancel();
     _pageController.dispose();
     _transcriptTextController.dispose();
     _transcriptScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_isRecording && !_isPaused) {
+        _togglePauseResume();
+      }
+      _saveCurrentDraft();
+    }
+  }
+
+  void _saveCurrentDraft() {
+    final text = _transcriptTextController.text.trim().isNotEmpty
+        ? _transcriptTextController.text.trim()
+        : _liveTranscript.trim();
+    if (text.isNotEmpty) {
+      ref.read(storageServiceProvider).saveVoiceDraft(
+            text: text,
+            durationSeconds: (_centisecondsElapsed / 100).ceil(),
+            courseId: widget.preselectedCourseId,
+          );
+    }
+  }
+
+  void _checkPendingDraft() {
+    final storage = ref.read(storageServiceProvider);
+    final draft = storage.getVoiceDraft();
+    if (draft != null && mounted) {
+      final text = draft['text'] as String;
+      final duration = draft['duration'] as int? ?? 0;
+      final timestamp = draft['timestamp'] as int? ?? 0;
+      final dateStr = DateFormat('dd MMM, HH:mm').format(
+        DateTime.fromMillisecondsSinceEpoch(timestamp),
+      );
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.restore_page_rounded, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Pulihkan Catatan?'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Ditemukan draft rekaman suara yang belum sempat disimpan ($dateStr):',
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: SingleChildScrollView(
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                        fontSize: 13, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                storage.clearVoiceDraft();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Buang Draft',
+                  style: TextStyle(color: AppColors.error)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _liveTranscript = text;
+                  _transcriptTextController.text = text;
+                  _centisecondsElapsed = duration * 100;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Draft berhasil dipulihkan! Kamu bisa melanjutkan atau menyimpannya.'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              },
+              child: const Text('Lanjutkan Draft'),
+            ),
+          ],
+        ),
+      );
+    } else if (mounted) {
+      // Auto-start recording when entering screen if no draft is pending (matching Recorder(Running))
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && !_isRecording) {
+          _startRecording();
+        }
+      });
+    }
   }
 
   Future<void> _startRecording() async {
@@ -95,6 +222,9 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
       _centisecondsElapsed = 0;
     });
 
+    final storage = ref.read(storageServiceProvider);
+    final selectedLang = storage.getSpeechLanguage();
+
     // 2. Start recording with SttRecord (captures audio to WAV and streams live Speech-to-Text in parallel)
     try {
       _transcriptSub?.cancel();
@@ -116,10 +246,19 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
       });
 
       await _sttRecord.start(
-        localeId: 'id-ID',
+        localeId: selectedLang,
         partialResults: true,
         enableSystemNotification: false,
       );
+
+      // Start 15s periodic auto-save (PRD 5.1.A)
+      _draftAutoSaveTimer?.cancel();
+      _draftAutoSaveTimer =
+          Timer.periodic(const Duration(seconds: 15), (_) {
+        if (_isRecording && mounted) {
+          _saveCurrentDraft();
+        }
+      });
 
       // Listen to amplitude for waveform via polling getAmplitude
       _sttAmplitudeTimer?.cancel();
@@ -176,6 +315,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     } else {
       await _sttRecord.pause();
       setState(() => _isPaused = true);
+      _saveCurrentDraft();
     }
   }
 
@@ -183,6 +323,8 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     _ticker?.cancel();
     _sttAmplitudeTimer?.cancel();
     _transcriptSub?.cancel();
+    _draftAutoSaveTimer?.cancel();
+    _saveCurrentDraft();
 
     String? finalPath;
     try {
@@ -221,6 +363,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
         initialTranscript: currentTranscript,
         preselectedCourseId: widget.preselectedCourseId,
         onSaved: () {
+          ref.read(storageServiceProvider).clearVoiceDraft();
           Navigator.of(ctx).pop(); // close sheet
           Navigator.of(context).pop(); // back to Catatan
         },
@@ -260,28 +403,27 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF5F5F5),
       body: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 12),
-            // Header Row: Merekam & Tombol Close
+            // Header Row: Merekam & Tombol Close (matching Recorder(Running).svg)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
                     'Merekam',
                     style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF212121),
                       letterSpacing: -0.5,
                     ),
                   ),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(24),
+                  GestureDetector(
                     onTap: () async {
                       if (_isRecording) {
                         try {
@@ -293,17 +435,17 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                       }
                     },
                     child: Container(
-                      width: 44,
-                      height: 44,
+                      width: 40,
+                      height: 40,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFF58ACF6),
+                        color: Color(0xFFBBDEFB),
                       ),
                       child: const Center(
                         child: Icon(
                           Icons.close_rounded,
-                          color: Colors.white,
-                          size: 24,
+                          color: Color(0xFF212121),
+                          size: 22,
                         ),
                       ),
                     ),
@@ -312,7 +454,7 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
               ),
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
 
             // Top Tab / Pill Switcher (Swipe or Tap)
             _buildTabSwitcher(),
@@ -467,9 +609,9 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
       children: [
         const Spacer(flex: 2),
 
-        // Waveform & Audio Ruler Visualizer
+        // Waveform & Audio Ruler Visualizer (matching Recorder(Running).svg)
         SizedBox(
-          height: 220,
+          height: 270,
           width: double.infinity,
           child: Stack(
             alignment: Alignment.center,
@@ -479,12 +621,12 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: _AudioRuler(isTop: true),
+                child: const _AudioRuler(isTop: true),
               ),
 
-              // Waveform Bars
+              // Waveform Bars (Rendered strictly on LEFT half of center line)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
+                padding: const EdgeInsets.symmetric(vertical: 20),
                 child: _buildWaveformBars(),
               ),
 
@@ -493,39 +635,39 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                 bottom: 0,
                 left: 0,
                 right: 0,
-                child: _AudioRuler(isTop: false),
+                child: const _AudioRuler(isTop: false),
               ),
 
-              // Central Red Indicator Needle with 2 Dots (Exact Match)
+              // Central Red Indicator Needle with 2 Dots (Exact Match Recorder(Running).svg)
               Positioned(
-                top: 2,
-                bottom: 2,
+                top: 0,
+                bottom: 0,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Top Dot
+                    // Top Dot (Diameter 10px, #EF5350)
                     Container(
                       width: 10,
                       height: 10,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFFF87171),
+                        color: Color(0xFFEF5350),
                       ),
                     ),
                     // Needle Line
                     Expanded(
                       child: Container(
-                        width: 2.2,
-                        color: const Color(0xFFF87171),
+                        width: 2.0,
+                        color: const Color(0xFFEF5350),
                       ),
                     ),
-                    // Bottom Dot
+                    // Bottom Dot (Diameter 10px, #EF5350)
                     Container(
                       width: 10,
                       height: 10,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFFF87171),
+                        color: Color(0xFFEF5350),
                       ),
                     ),
                   ],
@@ -537,33 +679,32 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
 
         const SizedBox(height: 28),
 
-        // Timer (MM.SS.cc)
+        // Timer Display (MM.SS.cc) matching Recorder(Running).svg (e.g. 00.23.32)
         Text(
           _formatTimer(),
           style: const TextStyle(
-            fontSize: 42,
+            fontSize: 52,
             fontWeight: FontWeight.w400,
-            color: Color(0xFF0F172A),
-            letterSpacing: 1.0,
+            color: Color(0xFF212121),
+            letterSpacing: 0.5,
           ),
         ),
 
         const Spacer(flex: 2),
 
-        // Recording Controls
+        // Recording Controls (matching Recorder(Running).svg)
         if (!_isRecording && !_isPaused) ...[
           // Button to start recording on user action
-          InkWell(
-            borderRadius: BorderRadius.circular(28),
+          GestureDetector(
             onTap: _startRecording,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
               decoration: BoxDecoration(
-                color: const Color(0xFF58ACF6),
+                color: const Color(0xFF42A5F5),
                 borderRadius: BorderRadius.circular(28),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF58ACF6).withValues(alpha: 0.35),
+                    color: const Color(0xFF42A5F5).withValues(alpha: 0.35),
                     blurRadius: 18,
                     offset: const Offset(0, 8),
                   ),
@@ -588,19 +729,18 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
             ),
           ),
         ] else ...[
-          // Recording Controls: Stop & Pause / Resume
+          // Recording Controls: Stop & Pause / Resume in rounded squircles #42A5F5
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Stop Button
-              InkWell(
-                borderRadius: BorderRadius.circular(22),
+              // Stop Button (Rounded squircle with white square)
+              GestureDetector(
                 onTap: _stopRecording,
                 child: Container(
                   width: 86,
                   height: 60,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF58ACF6),
+                    color: const Color(0xFF42A5F5),
                     borderRadius: BorderRadius.circular(22),
                   ),
                   child: Center(
@@ -609,22 +749,21 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                       height: 22,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(5),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 16),
-              // Pause / Resume Button
-              InkWell(
-                borderRadius: BorderRadius.circular(22),
+              // Pause / Resume Button (Rounded squircle with pause icon)
+              GestureDetector(
                 onTap: _togglePauseResume,
                 child: Container(
                   width: 86,
                   height: 60,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF58ACF6),
+                    color: const Color(0xFF42A5F5),
                     borderRadius: BorderRadius.circular(22),
                   ),
                   child: Center(
@@ -1011,40 +1150,57 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   }
 
   Widget _buildWaveformBars() {
-    // Generate bars to display
-    final bars = List<double>.from(_waveAmplitudes);
-    while (bars.length < _maxVisibleBars) {
-      bars.insert(0, 0.06);
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        const barWidth = 3.6;
-        const spacing = 4.2;
+        const barWidth = 3.0;
+        const spacing = 4.0;
+        final halfWidth = constraints.maxWidth / 2;
+        final maxBars = (halfWidth / (barWidth + spacing)).floor();
+
+        // Get the latest recorded amplitudes that fit within the left half
+        List<double> bars = List<double>.from(_waveAmplitudes);
+        if (bars.length > maxBars) {
+          bars = bars.sublist(bars.length - maxBars);
+        } else {
+          while (bars.length < maxBars) {
+            bars.insert(0, 0.05);
+          }
+        }
 
         return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: bars.map((amp) {
-            final barHeight = (amp * 130).clamp(6.0, 130.0);
+          children: [
+            // Left Half: audio bars aligned to the right (adjacent to the center needle)
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: bars.map((amp) {
+                  final barHeight = (amp * 160).clamp(6.0, 160.0);
 
-            return Container(
-              width: barWidth,
-              height: barHeight,
-              margin: const EdgeInsets.symmetric(horizontal: spacing / 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(2),
+                  return Container(
+                    width: barWidth,
+                    height: barHeight,
+                    margin: const EdgeInsets.symmetric(horizontal: spacing / 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B2041),
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
+                  );
+                }).toList(),
               ),
-            );
-          }).toList(),
+            ),
+            // Right Half: Blank/empty upcoming timeline
+            const Expanded(
+              child: SizedBox(),
+            ),
+          ],
         );
       },
     );
   }
 }
 
-// Audio Ruler with fine vertical tick marks matching Screenshot 2
+// Audio Ruler with fine vertical tick marks matching Recorder(Running).svg
 class _AudioRuler extends StatelessWidget {
   final bool isTop;
 
@@ -1053,7 +1209,7 @@ class _AudioRuler extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 18,
+      height: 19,
       width: double.infinity,
       child: CustomPaint(
         painter: _RulerPainter(isTop: isTop),
@@ -1069,18 +1225,24 @@ class _RulerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF93C5FD)
-      ..strokeWidth = 1.3
-      ..strokeCap = StrokeCap.round;
+    final majorPaint = Paint()
+      ..color = const Color(0xFF42A5F5)
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.square;
 
-    const tickSpacing = 7.5;
+    final minorPaint = Paint()
+      ..color = const Color(0xFF42A5F5)
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.square;
+
+    const tickSpacing = 5.0;
     final totalTicks = (size.width / tickSpacing).ceil();
 
     for (int i = 0; i <= totalTicks; i++) {
       final x = i * tickSpacing;
-      final isMajor = i % 5 == 0;
-      final tickHeight = isMajor ? 14.0 : 8.0;
+      final isMajor = i % 4 == 0; // Every 20px (0, 20, 40, 60...)
+      final tickHeight = isMajor ? 17.0 : 12.0;
+      final paint = isMajor ? majorPaint : minorPaint;
 
       if (isTop) {
         canvas.drawLine(Offset(x, 0), Offset(x, tickHeight), paint);
@@ -1125,6 +1287,9 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
   Duration _totalDuration = Duration.zero;
   bool _isSaving = false;
 
+  AutoTagResult? _autoTagResult;
+  bool _isLoadingAutoTag = false;
+
   @override
   void initState() {
     super.initState();
@@ -1136,6 +1301,34 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
 
     _player = AudioPlayer();
     _initAudioPlayer();
+
+    // Auto-fetch AI course recommendation if not preselected and transcript is available
+    if (_selectedCourseId == null && widget.initialTranscript.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fetchAutoTagSuggestion();
+      });
+    }
+  }
+
+  Future<void> _fetchAutoTagSuggestion() async {
+    final text = widget.initialTranscript.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _isLoadingAutoTag = true);
+    try {
+      final res = await ref.read(notesListProvider.notifier).suggestCourse(content: text);
+      if (mounted && res != null && res.suggestedCourseId != null) {
+        setState(() {
+          _autoTagResult = res;
+          _selectedCourseId = res.suggestedCourseId;
+          _isLoadingAutoTag = false;
+        });
+      } else if (mounted) {
+        setState(() => _isLoadingAutoTag = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingAutoTag = false);
+    }
   }
 
   Future<void> _initAudioPlayer() async {
@@ -1386,6 +1579,115 @@ class _SaveAudioNoteSheetState extends ConsumerState<_SaveAudioNoteSheet> {
               ),
             ),
             const SizedBox(height: 14),
+
+            // AI Course Recommendation Card
+            if (_isLoadingAutoTag)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16A34A)),
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'AI sedang mencocokkan mata kuliah dari transkrip...',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF15803D)),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_autoTagResult != null && _autoTagResult!.suggestedCourseId != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.auto_awesome, size: 18, color: Color(0xFF2563EB)),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Saran AI Berdasarkan Transkrip',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E40AF),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDBEAFE),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _autoTagResult!.isTimeMatched
+                                ? 'Jadwal Hari Ini'
+                                : '${(_autoTagResult!.confidenceScore > 1 ? _autoTagResult!.confidenceScore : _autoTagResult!.confidenceScore * 100).toInt()}% Cocok',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1D4ED8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _autoTagResult!.suggestedCourseName ?? 'Mata Kuliah',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    if (_autoTagResult!.matchedKeywords.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: _autoTagResult!.matchedKeywords
+                            .take(4)
+                            .map(
+                              (kw) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                                ),
+                                child: Text(
+                                  kw,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF475569)),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
 
             // Course selection
             DropdownButtonFormField<String?>(

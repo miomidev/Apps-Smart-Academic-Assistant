@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../core/constants/app_colors.dart';
 import '../models/focus_session_model.dart';
 import '../providers/focus_provider.dart';
 
@@ -15,8 +14,23 @@ class FocusStatsScreen extends ConsumerWidget {
     final sessionsAsync = ref.watch(focusSessionsProvider);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Statistik & Analitik Fokus'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF212121)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Statistik & Analitik Fokus',
+          style: TextStyle(
+            color: Color(0xFF212121),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -24,7 +38,7 @@ class FocusStatsScreen extends ConsumerWidget {
           ref.read(focusSessionsProvider.notifier).loadSessions();
         },
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -52,8 +66,9 @@ class FocusStatsScreen extends ConsumerWidget {
                               title: 'Total Fokus',
                               value: '${stats.totalMinutes}',
                               unit: 'Menit',
-                              icon: Icons.timer,
-                              color: AppColors.primary,
+                              icon: Icons.timer_rounded,
+                              iconColor: const Color(0xFF0284C7),
+                              iconBgColor: const Color(0xFFE0F2FE),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -62,8 +77,9 @@ class FocusStatsScreen extends ConsumerWidget {
                               title: 'Streak Belajar',
                               value: '${stats.currentStreak}',
                               unit: 'Hari',
-                              icon: Icons.local_fire_department,
-                              color: Colors.orange,
+                              icon: Icons.local_fire_department_rounded,
+                              iconColor: const Color(0xFFEA580C),
+                              iconBgColor: const Color(0xFFFFF7ED),
                             ),
                           ),
                         ],
@@ -76,8 +92,9 @@ class FocusStatsScreen extends ConsumerWidget {
                               title: 'Sesi Selesai',
                               value: '${stats.completedSessions}',
                               unit: 'Sesi',
-                              icon: Icons.check_circle_outline,
-                              color: AppColors.success,
+                              icon: Icons.check_circle_rounded,
+                              iconColor: const Color(0xFF16A34A),
+                              iconBgColor: const Color(0xFFDCFCE7),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -86,13 +103,14 @@ class FocusStatsScreen extends ConsumerWidget {
                               title: 'Tingkat Sukses',
                               value: '$successRate',
                               unit: '%',
-                              icon: Icons.pie_chart_outline,
-                              color: AppColors.secondary,
+                              icon: Icons.pie_chart_rounded,
+                              iconColor: const Color(0xFF7C3AED),
+                              iconBgColor: const Color(0xFFEDE9FE),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
                       // Weekly Bar Chart
                       _buildWeeklyBarChart(stats.dailyStats),
@@ -103,16 +121,18 @@ class FocusStatsScreen extends ConsumerWidget {
 
               const SizedBox(height: 24),
 
-              // Recent sessions list
-              const Text(
-                'Riwayat Sesi Terakhir',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+              // Recent sessions list header
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 10),
+                child: Text(
+                  'Riwayat Sesi Terakhir',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF212121),
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
 
               sessionsAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -120,11 +140,22 @@ class FocusStatsScreen extends ConsumerWidget {
                 data: (sessions) {
                   if (sessions.isEmpty) {
                     return Container(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(28),
                       alignment: Alignment.center,
-                      child: const Text(
-                        'Belum ada riwayat sesi fokus.',
-                        style: TextStyle(color: AppColors.textSecondary),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFEEEEEE)),
+                      ),
+                      child: const Column(
+                        children: [
+                          Icon(Icons.hourglass_empty_rounded, size: 36, color: Color(0xFFCBD5E1)),
+                          SizedBox(height: 10),
+                          Text(
+                            'Belum ada riwayat sesi fokus.',
+                            style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                          ),
+                        ],
                       ),
                     );
                   }
@@ -133,39 +164,44 @@ class FocusStatsScreen extends ConsumerWidget {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: sessions.take(10).length,
-                    separatorBuilder: (ctx, i) => const SizedBox(height: 8),
+                    separatorBuilder: (ctx, i) => const SizedBox(height: 10),
                     itemBuilder: (ctx, i) {
                       final item = sessions[i];
                       final isSuccess = item.status == FocusStatus.completed;
 
                       return Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.neutral200),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFEEEEEE)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x04000000),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: (isSuccess
-                                        ? AppColors.success
-                                        : AppColors.error)
-                                    .withValues(alpha: 0.1),
+                                color: isSuccess
+                                    ? const Color(0xFFECFDF5)
+                                    : const Color(0xFFFEF2F2),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
-                                isSuccess ? Icons.check : Icons.close,
+                                isSuccess ? Icons.check_rounded : Icons.close_rounded,
                                 color: isSuccess
-                                    ? AppColors.success
-                                    : AppColors.error,
-                                size: 16,
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFFEF4444),
+                                size: 18,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,15 +210,16 @@ class FocusStatsScreen extends ConsumerWidget {
                                     item.course?.name ?? 'Fokus Bebas',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                      fontSize: 14,
+                                      color: Color(0xFF212121),
                                     ),
                                   ),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    DateFormat('d MMM, HH:mm')
-                                        .format(item.startedAt),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textSecondary,
+                                    DateFormat('d MMM, HH:mm').format(item.startedAt),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
                                     ),
                                   ),
                                 ],
@@ -193,21 +230,28 @@ class FocusStatsScreen extends ConsumerWidget {
                               children: [
                                 Text(
                                   '${item.actualMinutes} Menit',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: isSuccess
-                                        ? AppColors.textPrimary
-                                        : AppColors.error,
+                                    fontSize: 14,
+                                    color: Color(0xFF0F172A),
                                   ),
                                 ),
-                                Text(
-                                  isSuccess ? 'Selesai' : 'Menyerah',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: isSuccess
-                                        ? AppColors.success
-                                        : AppColors.error,
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isSuccess ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    isSuccess ? 'Selesai' : 'Dibatalkan',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: isSuccess
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFFEF4444),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -219,6 +263,7 @@ class FocusStatsScreen extends ConsumerWidget {
                   );
                 },
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -231,33 +276,50 @@ class FocusStatsScreen extends ConsumerWidget {
     required String value,
     required String unit,
     required IconData icon,
-    required Color color,
+    required Color iconColor,
+    required Color iconBgColor,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.neutral200),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFEEEEEE)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 16, color: iconColor),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
@@ -265,17 +327,18 @@ class FocusStatsScreen extends ConsumerWidget {
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 22,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: Color(0xFF0F172A),
                 ),
               ),
               const SizedBox(width: 4),
               Text(
                 unit,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
-                  color: AppColors.textSecondary,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -287,28 +350,46 @@ class FocusStatsScreen extends ConsumerWidget {
 
   Widget _buildWeeklyBarChart(List<FocusDailyStat> dailyStats) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.neutral200),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFEEEEEE)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Aktivitas Fokus 7 Hari Terakhir',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
+          const Row(
+            children: [
+              Icon(Icons.bar_chart_rounded, size: 20, color: Color(0xFF42A5F5)),
+              SizedBox(width: 8),
+              Text(
+                'Aktivitas Fokus 7 Hari Terakhir',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF212121),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           SizedBox(
             height: 160,
             child: dailyStats.isEmpty
-                ? const Center(child: Text('Belum ada data grafik'))
+                ? const Center(
+                    child: Text(
+                      'Belum ada data grafik',
+                      style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                    ),
+                  )
                 : BarChart(
                     BarChartData(
                       alignment: BarChartAlignment.spaceAround,
@@ -330,9 +411,11 @@ class FocusStatsScreen extends ConsumerWidget {
                       titlesData: FlTitlesData(
                         show: true,
                         topTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
                         rightTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
                         leftTitles: AxisTitles(
                           sideTitles: SideTitles(
                             showTitles: true,
@@ -341,7 +424,7 @@ class FocusStatsScreen extends ConsumerWidget {
                               return Text(
                                 val.toInt().toString(),
                                 style: const TextStyle(
-                                  color: AppColors.neutral400,
+                                  color: Color(0xFF94A3B8),
                                   fontSize: 10,
                                 ),
                               );
@@ -357,7 +440,7 @@ class FocusStatsScreen extends ConsumerWidget {
                                 return Text(
                                   dailyStats[idx].dayName,
                                   style: const TextStyle(
-                                    color: AppColors.textSecondary,
+                                    color: Color(0xFF64748B),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -371,6 +454,7 @@ class FocusStatsScreen extends ConsumerWidget {
                       gridData: const FlGridData(
                         show: true,
                         drawVerticalLine: false,
+                        drawHorizontalLine: true,
                       ),
                       borderData: FlBorderData(show: false),
                       barGroups: dailyStats.asMap().entries.map((entry) {
@@ -379,7 +463,7 @@ class FocusStatsScreen extends ConsumerWidget {
                           barRods: [
                             BarChartRodData(
                               toY: entry.value.minutes.toDouble(),
-                              color: AppColors.primary,
+                              color: const Color(0xFF42A5F5),
                               width: 16,
                               borderRadius: const BorderRadius.vertical(
                                 top: Radius.circular(6),

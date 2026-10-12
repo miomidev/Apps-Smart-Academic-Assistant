@@ -138,15 +138,16 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
                   Navigator.of(context).pop();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: const Color(0xFF42A5F5),
                   foregroundColor: Colors.white,
+                  elevation: 0,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Kembali ke Menu'),
+                child: const Text('Kembali ke Menu', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -159,20 +160,25 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Menyerah Sekarang?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Menyerah Sekarang?', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text(
           'Sesi ini belum selesai dan tidak akan dihitung dalam statistik fokus mingguan Anda.',
+          style: TextStyle(color: Color(0xFF475569)),
         ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF64748B)),
             child: const Text('Lanjut Fokus'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('Ya, Menyerah'),
           ),
@@ -305,7 +311,7 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
                               strokeWidth: 12,
                               backgroundColor: Colors.white.withValues(alpha: 0.1),
                               valueColor: const AlwaysStoppedAnimation<Color>(
-                                AppColors.secondary,
+                                Color(0xFF42A5F5),
                               ),
                             ),
                             Column(
@@ -358,7 +364,7 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.music_note,
-                                size: 14, color: AppColors.secondary),
+                                size: 14, color: Color(0xFF42A5F5)),
                             const SizedBox(width: 6),
                             Text(
                               'Audio: ${widget.ambientSound}',
@@ -385,35 +391,64 @@ class _FocusActiveScreenState extends ConsumerState<FocusActiveScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Controls: Pause / Resume & Surrender
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Surrender button
-                        TextButton.icon(
-                          onPressed: _onSurrender,
-                          icon: const Icon(Icons.close, color: Colors.redAccent),
-                          label: const Text(
-                            'Menyerah',
-                            style: TextStyle(color: Colors.redAccent),
+                    // Controls: Symmetrical Control Bar
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // Surrender button
+                          InkWell(
+                            onTap: _onSurrender,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.close_rounded, color: Color(0xFFEF4444), size: 20),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Menyerah',
+                                    style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
 
-                        // Pause / Resume FAB
-                        FloatingActionButton.large(
-                          heroTag: 'fab_focus_active',
-                          onPressed: _togglePause,
-                          backgroundColor: Colors.white.withValues(alpha: 0.15),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          child: Icon(
-                            _isPaused ? Icons.play_arrow : Icons.pause,
-                            size: 36,
+                          // Pause / Resume Button
+                          InkWell(
+                            onTap: _togglePause,
+                            borderRadius: BorderRadius.circular(36),
+                            child: Container(
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF42A5F5),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF42A5F5).withValues(alpha: 0.4),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                                color: Colors.white,
+                                size: 36,
+                              ),
+                            ),
                           ),
-                        ),
-
-                        const SizedBox(width: 80),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 20),
                   ],

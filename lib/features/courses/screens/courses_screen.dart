@@ -14,8 +14,11 @@ class CoursesScreen extends ConsumerWidget {
     final coursesAsync = ref.watch(coursesListProvider);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         title: const Text('Mata Kuliah'),
+        backgroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
@@ -128,7 +131,7 @@ class CoursesScreen extends ConsumerWidget {
             MaterialPageRoute(builder: (_) => const CourseFormScreen()),
           );
         },
-        backgroundColor: AppColors.primary,
+        backgroundColor: const Color(0xFF42A5F5),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Tambah MK'),

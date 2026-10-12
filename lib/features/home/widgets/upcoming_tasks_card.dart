@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../../core/constants/app_colors.dart';
 import '../../schedules/models/schedule_model.dart';
 
 class UpcomingTasksCard extends StatelessWidget {
@@ -20,14 +19,21 @@ class UpcomingTasksCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFEEEEEE)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 12, 12),
+            padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -37,7 +43,7 @@ class UpcomingTasksCard extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: const BoxDecoration(
-                        color: AppColors.warning,
+                        color: Color(0xFFF59E0B),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -47,38 +53,41 @@ class UpcomingTasksCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: Color(0xFF212121),
                       ),
                     ),
                   ],
                 ),
-                TextButton(
-                  onPressed: onViewAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
+                GestureDetector(
+                  onTap: onViewAll,
+                  child: const Text(
+                    'Lihat Semua',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF42A5F5),
+                    ),
                   ),
-                  child: const Text('Lihat Semua', style: TextStyle(fontSize: 12)),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
           if (upcomingTasks.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFDCFCE7),
+                      shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.task_alt_rounded,
                       size: 20,
-                      color: AppColors.success,
+                      color: Color(0xFF10B981),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -87,7 +96,8 @@ class UpcomingTasksCard extends StatelessWidget {
                       'Hebat! Semua tugas akademik sudah selesai dikerjakan.',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppColors.textSecondary,
+                        color: Color(0xFF64748B),
+                        height: 1.4,
                       ),
                     ),
                   ),
@@ -108,80 +118,83 @@ class UpcomingTasksCard extends StatelessWidget {
                 final isUrgent =
                     task.dueDate.difference(DateTime.now()).inHours < 24;
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isUrgent
-                        ? AppColors.error.withValues(alpha: 0.05)
-                        : AppColors.surfaceVariant.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: isUrgent
-                        ? Border.all(
-                            color: AppColors.error.withValues(alpha: 0.2))
-                        : null,
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(
-                          Icons.radio_button_unchecked_rounded,
-                          color: AppColors.textMuted,
-                          size: 20,
-                        ),
-                        onPressed: () => onToggleComplete(task.id),
+                return InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: onViewAll,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isUrgent ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isUrgent ? const Color(0xFFFECACA) : const Color(0xFFF1F5F9),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              task.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
+                    ),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => onToggleComplete(task.id),
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFFCBD5E1),
+                                width: 1.8,
                               ),
                             ),
-                            if (task.course != null)
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                task.course!.name,
+                                task.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF212121),
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isUrgent
-                              ? AppColors.error.withValues(alpha: 0.1)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          dueFormatted,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: isUrgent
-                                ? AppColors.error
-                                : AppColors.textSecondary,
+                              if (task.course != null)
+                                Text(
+                                  task.course!.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF64748B),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isUrgent ? const Color(0xFFFEE2E2) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isUrgent ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Text(
+                            dueFormatted,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isUrgent ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

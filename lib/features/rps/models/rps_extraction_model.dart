@@ -38,19 +38,35 @@ class ExtractedMeeting {
   });
 
   factory ExtractedMeeting.fromJson(Map<String, dynamic> json) {
-    final rawSubs = json['subTopics'] as List<dynamic>? ?? [];
+    final rawSubs = json['subTopics'] as List<dynamic>? ??
+        json['activities'] as List<dynamic>? ??
+        [];
     final rawTasks = json['tasks'] as List<dynamic>? ?? [];
+
+    final tasksList = rawTasks
+        .map((t) => ExtractedTask.fromJson(t as Map<String, dynamic>))
+        .toList();
+
+    if (tasksList.isEmpty && json['hasTask'] == true) {
+      final taskDesc = json['taskDescription'] as String? ?? 'Tugas Perkuliahan';
+      tasksList.add(ExtractedTask(
+        title: taskDesc,
+        type: json['isExam'] == true ? 'UJIAN' : 'TUGAS',
+      ));
+    }
+
+    final parsedDate = json['date'] != null
+        ? DateTime.tryParse(json['date'].toString())
+        : (json['suggestedDate'] != null
+            ? DateTime.tryParse(json['suggestedDate'].toString())
+            : null);
 
     return ExtractedMeeting(
       meetingNumber: (json['meetingNumber'] ?? json['meeting_number'] as num?)?.toInt() ?? 1,
       topic: json['topic'] as String? ?? '',
       subTopics: rawSubs.map((e) => e.toString()).toList(),
-      date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString())
-          : null,
-      tasks: rawTasks
-          .map((t) => ExtractedTask.fromJson(t as Map<String, dynamic>))
-          .toList(),
+      date: parsedDate,
+      tasks: tasksList,
       isSelected: true,
     );
   }

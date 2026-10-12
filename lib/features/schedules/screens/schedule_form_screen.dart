@@ -130,179 +130,285 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
     final coursesAsync = ref.watch(coursesListProvider);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Tambah Jadwal / Tugas'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF212121)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Tambah Jadwal / Tugas',
+          style: TextStyle(
+            color: Color(0xFF212121),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           children: [
-            // Course Dropdown
-            coursesAsync.when(
-              data: (courses) {
-                if (courses.isEmpty) {
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'Tambahkan mata kuliah terlebih dahulu sebelum membuat jadwal.',
-                      style: TextStyle(color: AppColors.error),
-                    ),
-                  );
-                }
-
-                return DropdownButtonFormField<String>(
-                  initialValue: _selectedCourseId ?? courses.first.id,
-                  decoration: const InputDecoration(
-                    labelText: 'Mata Kuliah *',
-                    prefixIcon: Icon(Icons.school_rounded),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFEEEEEE)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
                   ),
-                  items: courses.map((c) {
-                    return DropdownMenuItem(
-                      value: c.id,
-                      child: Text(c.name, overflow: TextOverflow.ellipsis),
-                    );
-                  }).toList(),
-                  onChanged: (val) => setState(() => _selectedCourseId = val),
-                );
-              },
-              loading: () => const LinearProgressIndicator(),
-              error: (err, stack) => const Text('Gagal memuat mata kuliah'),
-            ),
-            const SizedBox(height: 16),
-
-            // Type Segment
-            SegmentedButton<ScheduleType>(
-              segments: const [
-                ButtonSegment(
-                  value: ScheduleType.classType,
-                  label: Text('Kuliah'),
-                  icon: Icon(Icons.menu_book_rounded),
-                ),
-                ButtonSegment(
-                  value: ScheduleType.task,
-                  label: Text('Tugas'),
-                  icon: Icon(Icons.assignment_rounded),
-                ),
-                ButtonSegment(
-                  value: ScheduleType.exam,
-                  label: Text('Ujian'),
-                  icon: Icon(Icons.quiz_rounded),
-                ),
-              ],
-              selected: {_selectedType},
-              onSelectionChanged: (val) {
-                setState(() => _selectedType = val.first);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Title
-            TextFormField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'Judul Jadwal / Topik *',
-                hintText: _selectedType == ScheduleType.classType
-                    ? 'Contoh: Pertemuan 3: REST API'
-                    : 'Contoh: Tugas Mandiri Bab 2',
-                prefixIcon: const Icon(Icons.title_rounded),
+                ],
               ),
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Judul wajib diisi' : null,
-            ),
-            const SizedBox(height: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Type Segment
+                  const Text(
+                    'Kategori Jadwal',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildTypeChip(ScheduleType.classType, 'Kuliah', Icons.menu_book_rounded),
+                      const SizedBox(width: 8),
+                      _buildTypeChip(ScheduleType.task, 'Tugas', Icons.assignment_rounded),
+                      const SizedBox(width: 8),
+                      _buildTypeChip(ScheduleType.exam, 'Ujian', Icons.quiz_rounded),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
 
-            // Meeting Number (if class)
-            if (_selectedType == ScheduleType.classType) ...[
-              TextFormField(
-                controller: _meetingNumController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Pertemuan Ke- (opsional)',
-                  hintText: '1, 2, 3 ...',
-                  prefixIcon: Icon(Icons.numbers_rounded),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                  // Course Dropdown
+                  const Text(
+                    'Mata Kuliah',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  coursesAsync.when(
+                    data: (courses) {
+                      if (courses.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFECACA)),
+                          ),
+                          child: const Text(
+                            'Tambahkan mata kuliah terlebih dahulu sebelum membuat jadwal.',
+                            style: TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+                          ),
+                        );
+                      }
 
-            // Date & Time
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: _pickDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Tanggal',
-                        prefixIcon: Icon(Icons.calendar_today_rounded),
+                      return DropdownButtonFormField<String>(
+                        initialValue: _selectedCourseId ?? courses.first.id,
+                        isExpanded: true,
+                        decoration: _inputDecoration('Pilih Mata Kuliah', Icons.school_rounded),
+                        items: courses.map((c) {
+                          return DropdownMenuItem(
+                            value: c.id,
+                            child: Text(c.name, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedCourseId = val),
+                      );
+                    },
+                    loading: () => const LinearProgressIndicator(),
+                    error: (err, stack) => const Text('Gagal memuat mata kuliah'),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Title
+                  const Text(
+                    'Judul / Topik',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _titleController,
+                    decoration: _inputDecoration(
+                      _selectedType == ScheduleType.classType
+                          ? 'Contoh: Pertemuan 3: REST API'
+                          : 'Contoh: Tugas Mandiri Bab 2',
+                      Icons.title_rounded,
+                    ),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Judul wajib diisi' : null,
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Meeting Number (if class)
+                  if (_selectedType == ScheduleType.classType) ...[
+                    const Text(
+                      'Pertemuan Ke-',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _meetingNumController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration('Contoh: 1, 2, 3...', Icons.numbers_rounded),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+
+                  // Date & Time
+                  const Text(
+                    'Waktu Pelaksanaan',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: _pickDate,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InputDecorator(
+                            decoration: _inputDecoration('Tanggal', Icons.calendar_today_rounded),
+                            child: Text(
+                              '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Text(
-                        '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          onTap: _pickTime,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InputDecorator(
+                            decoration: _inputDecoration('Jam (WIB)', Icons.access_time_rounded),
+                            child: Text(
+                              '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                          ),
+                        ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Reminder Dropdown
+                  const Text(
+                    'Pengingat Alarm',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    initialValue: _reminderMinutes,
+                    decoration: _inputDecoration('Ingatkan Sebelum', Icons.notifications_active_rounded),
+                    items: const [
+                      DropdownMenuItem(value: 15, child: Text('15 Menit Sebelumnya', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 30, child: Text('30 Menit Sebelumnya', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 60, child: Text('1 Jam Sebelumnya', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 120, child: Text('2 Jam Sebelumnya', style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(value: 1440, child: Text('1 Hari Sebelumnya', style: TextStyle(fontSize: 13))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _reminderMinutes = val);
+                    },
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Submit Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF42A5F5),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _isSubmitting ? null : _submit,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text(
+                              'Simpan Jadwal',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InkWell(
-                    onTap: _pickTime,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Jam (WIB)',
-                        prefixIcon: Icon(Icons.access_time_rounded),
-                      ),
-                      child: Text(
-                        '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Reminder Dropdown
-            DropdownButtonFormField<int>(
-              initialValue: _reminderMinutes,
-              decoration: const InputDecoration(
-                labelText: 'Ingatkan Sebelum',
-                prefixIcon: Icon(Icons.notifications_active_rounded),
-              ),
-              items: const [
-                DropdownMenuItem(value: 15, child: Text('15 Menit Sebelumnya')),
-                DropdownMenuItem(value: 30, child: Text('30 Menit Sebelumnya')),
-                DropdownMenuItem(value: 60, child: Text('1 Jam Sebelumnya')),
-                DropdownMenuItem(value: 120, child: Text('2 Jam Sebelumnya')),
-                DropdownMenuItem(value: 1440, child: Text('1 Hari Sebelumnya')),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => _reminderMinutes = val);
-              },
-            ),
-            const SizedBox(height: 32),
-
-            // Submit Button
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submit,
-                child: _isSubmitting
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        'Simpan Jadwal',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTypeChip(ScheduleType type, String label, IconData icon) {
+    final isSelected = _selectedType == type;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedType = type),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF42A5F5) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint, IconData prefixIcon) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(prefixIcon, color: const Color(0xFF42A5F5), size: 20),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 1.5),
       ),
     );
   }

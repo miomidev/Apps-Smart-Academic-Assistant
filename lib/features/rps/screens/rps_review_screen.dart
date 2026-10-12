@@ -102,24 +102,33 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
         await showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Row(
               children: [
-                Icon(Icons.check_circle, color: AppColors.success),
+                Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 24),
                 SizedBox(width: 8),
-                Text('Berhasil Terjadwal!'),
+                Text('Berhasil Terjadwal!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               ],
             ),
             content: Text(
               '$totalScheduled item jadwal dan tugas berhasil ditambahkan ke kalender Anda beserta pengingat otomatis.',
+              style: const TextStyle(color: Color(0xFF475569)),
             ),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             actions: [
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF42A5F5),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).pop(); // pop review
                   Navigator.of(context).pop(); // pop upload
                 },
-                child: const Text('Bagus, Selesai!'),
+                child: const Text('Bagus, Selesai!', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -147,18 +156,36 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
     );
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Tinjau Hasil Ekstraksi'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF212121)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Tinjau Hasil Ekstraksi',
+          style: TextStyle(
+            color: Color(0xFF212121),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => _toggleSelectAll(
               selectedMeetings.length != _meetings.length,
             ),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF42A5F5),
+            ),
             child: Text(
               selectedMeetings.length == _meetings.length
                   ? 'Batal Semua'
                   : 'Pilih Semua',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
           ),
         ],
@@ -172,8 +199,16 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFEEEEEE)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x06000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,36 +218,42 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                        color: Color(0xFF212121),
                       ),
                     ),
                     if (widget.extractionResult.lecturer != null) ...[
                       const SizedBox(height: 4),
                       Text(
                         'Dosen: ${widget.extractionResult.lecturer}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: Color(0xFF64748B),
                         ),
                       ),
                     ],
-                    const Divider(height: 16),
+                    const Divider(height: 20, color: Color(0xFFF1F5F9)),
                     Row(
                       children: [
                         const Text(
                           'Jam Kuliah:',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
                         ),
                         const SizedBox(width: 8),
                         ActionChip(
-                          label: Text(_formatTimeOfDay(_startTime)),
+                          label: Text(_formatTimeOfDay(_startTime), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7))),
+                          backgroundColor: const Color(0xFFE0F2FE),
+                          side: BorderSide.none,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           onPressed: _pickStartTime,
                         ),
                         const SizedBox(width: 4),
-                        const Text('-'),
+                        const Text('-', style: TextStyle(color: Color(0xFF64748B))),
                         const SizedBox(width: 4),
                         ActionChip(
-                          label: Text(_formatTimeOfDay(_endTime)),
+                          label: Text(_formatTimeOfDay(_endTime), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7))),
+                          backgroundColor: const Color(0xFFE0F2FE),
+                          side: BorderSide.none,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           onPressed: _pickEndTime,
                         ),
                       ],
@@ -228,15 +269,23 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                   itemCount: _meetings.length,
                   itemBuilder: (ctx, i) {
                     final meeting = _meetings[i];
-                    return Card(
+                    return Container(
                       margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
                           color: meeting.isSelected
-                              ? AppColors.primary.withValues(alpha: 0.3)
-                              : Colors.transparent,
+                              ? const Color(0xFF42A5F5).withValues(alpha: 0.5)
+                              : const Color(0xFFEEEEEE),
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x04000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -247,6 +296,7 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                               children: [
                                 Checkbox(
                                   value: meeting.isSelected,
+                                  activeColor: const Color(0xFF42A5F5),
                                   onChanged: (val) {
                                     setState(() {
                                       meeting.isSelected = val ?? false;
@@ -257,8 +307,7 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary
-                                        .withValues(alpha: 0.1),
+                                    color: const Color(0xFFE0F2FE),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -266,18 +315,17 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.primary,
+                                      color: Color(0xFF0284C7),
                                     ),
                                   ),
                                 ),
                                 const Spacer(),
                                 if (meeting.date != null)
                                   Text(
-                                    DateFormat('d MMM yyyy')
-                                        .format(meeting.date!),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textSecondary,
+                                    DateFormat('d MMM yyyy').format(meeting.date!),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
                                     ),
                                   ),
                               ],
@@ -292,7 +340,7 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
-                                      color: AppColors.textPrimary,
+                                      color: Color(0xFF212121),
                                     ),
                                   ),
                                   if (meeting.subTopics.isNotEmpty) ...[
@@ -301,9 +349,9 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                                       meeting.subTopics.join(', '),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.textSecondary,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF64748B),
                                       ),
                                     ),
                                   ],
@@ -312,21 +360,28 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
                                     Wrap(
                                       spacing: 6,
                                       children: meeting.tasks.map((t) {
-                                        return Chip(
-                                          avatar: const Icon(
-                                            Icons.assignment_outlined,
-                                            size: 12,
-                                            color: AppColors.warning,
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFF7ED),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: const Color(0xFFFFEDD5)),
                                           ),
-                                          label: Text(
-                                            t.title,
-                                            style: const TextStyle(fontSize: 10),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.assignment_outlined,
+                                                size: 13,
+                                                color: Color(0xFFEA580C),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                t.title,
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFEA580C)),
+                                              ),
+                                            ],
                                           ),
-                                          backgroundColor: AppColors.warning
-                                              .withValues(alpha: 0.1),
-                                          padding: EdgeInsets.zero,
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
                                         );
                                       }).toList(),
                                     ),
@@ -344,22 +399,31 @@ class _RpsReviewScreenState extends ConsumerState<RpsReviewScreen> {
 
               // Bottom confirm button
               SafeArea(
-                child: Padding(
+                child: Container(
                   padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+                  ),
                   child: SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: 50,
                     child: ElevatedButton(
                       onPressed: _isSaving ? null : _scheduleAll,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: const Color(0xFF42A5F5),
                         foregroundColor: Colors.white,
+                        elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
                       child: _isSaving
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
                           : Text(
                               'Jadwalkan (${selectedMeetings.length} Pertemuan + $totalTasks Tugas)',
                               style: const TextStyle(

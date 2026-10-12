@@ -149,286 +149,394 @@ class _CourseFormScreenState extends ConsumerState<CourseFormScreen> {
     final isEdit = widget.initialCourse != null;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text(isEdit ? 'Ubah Mata Kuliah' : 'Tambah Mata Kuliah'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF212121)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          isEdit ? 'Ubah Mata Kuliah' : 'Tambah Mata Kuliah',
+          style: const TextStyle(
+            color: Color(0xFF212121),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           children: [
-            // Nama Mata Kuliah
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama Mata Kuliah *',
-                hintText: 'Contoh: Pemrograman Web Lanjut',
-                prefixIcon: Icon(Icons.menu_book_rounded),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFEEEEEE)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
               ),
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Nama mata kuliah wajib diisi' : null,
-            ),
-            const SizedBox(height: 16),
-
-            // Kode & Dosen
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: _codeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kode MK',
-                      hintText: 'IF204',
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Nama Mata Kuliah
+                  const Text(
+                    'Nama Mata Kuliah',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 3,
-                  child: TextFormField(
-                    controller: _lecturerController,
-                    decoration: const InputDecoration(
-                      labelText: 'Dosen Pengampu',
-                      hintText: 'Nama Dosen',
-                    ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: _inputDecoration('Contoh: Pemrograman Web Lanjut', Icons.menu_book_rounded),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Nama mata kuliah wajib diisi' : null,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
+                  const SizedBox(height: 18),
 
-            // Warna Mata Kuliah
-            const Text(
-              'Warna Label Mata Kuliah',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: AppColors.courseColors.map((color) {
-                final hex = AppColors.toHex(color);
-                final isSelected = _selectedColorHex.toUpperCase() == hex.toUpperCase();
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedColorHex = hex),
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected ? Colors.black87 : Colors.transparent,
-                        width: 2.5,
-                      ),
-                    ),
-                    child: isSelected
-                        ? const Icon(Icons.check, color: Colors.white, size: 20)
-                        : null,
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-
-            // Tanggal Mulai Kuliah
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Tanggal Mulai Perkuliahan'),
-              subtitle: Text(
-                _startDate != null
-                    ? '${_startDate!.day}/${_startDate!.month}/${_startDate!.year}'
-                    : 'Belum ditentukan (default hari ini)',
-              ),
-              trailing: OutlinedButton(
-                onPressed: _pickStartDate,
-                child: const Text('Pilih Tanggal'),
-              ),
-            ),
-            const Divider(height: 32),
-
-            // Jadwal Kuliah Mingguan (Course Slots)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Jadwal Kuliah Mingguan',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-                TextButton.icon(
-                  onPressed: _addSlot,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Tambah Jam'),
-                ),
-              ],
-            ),
-            if (_slots.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Belum ada jadwal mingguan. Tambahkan agar sistem dapat mencocokkan waktu kuliah untuk auto-tag catatan.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                ),
-              )
-            else
-              ..._slots.asMap().entries.map((entry) {
-                final index = entry.key;
-                final slot = entry.value;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.border),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
+                  // Kode & Dosen
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              initialValue: slot.dayOfWeek,
-                              decoration: const InputDecoration(
-                                labelText: 'Hari',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                              items: const [
-                                DropdownMenuItem(value: 1, child: Text('Senin')),
-                                DropdownMenuItem(value: 2, child: Text('Selasa')),
-                                DropdownMenuItem(value: 3, child: Text('Rabu')),
-                                DropdownMenuItem(value: 4, child: Text('Kamis')),
-                                DropdownMenuItem(value: 5, child: Text('Jumat')),
-                                DropdownMenuItem(value: 6, child: Text('Sabtu')),
-                                DropdownMenuItem(value: 7, child: Text('Minggu')),
-                              ],
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setState(() {
-                                    _slots[index] = CourseSlotModel(
-                                      id: slot.id,
-                                      courseId: slot.courseId,
-                                      dayOfWeek: val,
-                                      startTime: slot.startTime,
-                                      endTime: slot.endTime,
-                                      room: slot.room,
-                                    );
-                                  });
-                                }
-                              },
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Kode MK',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                            onPressed: () => _removeSlot(index),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _codeController,
+                              decoration: _inputDecoration('IF204', Icons.vpn_key_rounded),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: slot.startTime,
-                              decoration: const InputDecoration(
-                                labelText: 'Mulai (WIB)',
-                                hintText: '08:00',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                              onChanged: (val) {
-                                _slots[index] = CourseSlotModel(
-                                  id: slot.id,
-                                  courseId: slot.courseId,
-                                  dayOfWeek: slot.dayOfWeek,
-                                  startTime: val,
-                                  endTime: slot.endTime,
-                                  room: slot.room,
-                                );
-                              },
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Dosen Pengampu',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: slot.endTime,
-                              decoration: const InputDecoration(
-                                labelText: 'Selesai (WIB)',
-                                hintText: '09:40',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                              onChanged: (val) {
-                                _slots[index] = CourseSlotModel(
-                                  id: slot.id,
-                                  courseId: slot.courseId,
-                                  dayOfWeek: slot.dayOfWeek,
-                                  startTime: slot.startTime,
-                                  endTime: val,
-                                  room: slot.room,
-                                );
-                              },
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _lecturerController,
+                              decoration: _inputDecoration('Nama Dosen', Icons.person_rounded),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: slot.room,
-                              decoration: const InputDecoration(
-                                labelText: 'Ruangan',
-                                hintText: 'R. 102',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                              onChanged: (val) {
-                                _slots[index] = CourseSlotModel(
-                                  id: slot.id,
-                                  courseId: slot.courseId,
-                                  dayOfWeek: slot.dayOfWeek,
-                                  startTime: slot.startTime,
-                                  endTime: slot.endTime,
-                                  room: val,
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                );
-              }),
+                  const SizedBox(height: 20),
 
-            const SizedBox(height: 16),
-            // Kata Kunci Tambahan
-            TextFormField(
-              controller: _keywordsController,
-              decoration: const InputDecoration(
-                labelText: 'Kata Kunci Auto-Tag (pisahkan koma)',
-                hintText: 'Contoh: react, flutter, html, css, api',
-                prefixIcon: Icon(Icons.tag_rounded),
-              ),
-            ),
-            const SizedBox(height: 32),
+                  // Warna Mata Kuliah
+                  const Text(
+                    'Warna Label Mata Kuliah',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: AppColors.courseColors.map((color) {
+                      final hex = AppColors.toHex(color);
+                      final isSelected = _selectedColorHex.toUpperCase() == hex.toUpperCase();
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedColorHex = hex),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? const Color(0xFF212121) : Colors.transparent,
+                              width: 2.5,
+                            ),
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, color: Colors.white, size: 18)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
 
-            // Submit Button
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submit,
-                child: _isSubmitting
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        isEdit ? 'Simpan Perubahan' : 'Buat Mata Kuliah',
-                        style: const TextStyle(fontSize: 16),
+                  // Tanggal Mulai Kuliah
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Tanggal Mulai Perkuliahan',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      _startDate != null
+                          ? '${_startDate!.day}/${_startDate!.month}/${_startDate!.year}'
+                          : 'Belum ditentukan (default hari ini)',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    trailing: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF42A5F5),
+                        side: const BorderSide(color: Color(0xFF42A5F5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
+                      onPressed: _pickStartDate,
+                      child: const Text('Pilih'),
+                    ),
+                  ),
+                  const Divider(height: 28, color: Color(0xFFF1F5F9)),
+
+                  // Jadwal Kuliah Mingguan (Course Slots)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Jadwal Kuliah Mingguan',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF212121)),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: const Color(0xFF42A5F5)),
+                        onPressed: _addSlot,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Tambah Jam'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_slots.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Text(
+                        'Belum ada jadwal mingguan. Tambahkan agar sistem dapat mencocokkan waktu kuliah untuk auto-tag catatan suara.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                    )
+                  else
+                    ..._slots.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final slot = entry.value;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<int>(
+                                    initialValue: slot.dayOfWeek,
+                                    decoration: InputDecoration(
+                                      labelText: 'Hari',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(value: 1, child: Text('Senin')),
+                                      DropdownMenuItem(value: 2, child: Text('Selasa')),
+                                      DropdownMenuItem(value: 3, child: Text('Rabu')),
+                                      DropdownMenuItem(value: 4, child: Text('Kamis')),
+                                      DropdownMenuItem(value: 5, child: Text('Jumat')),
+                                      DropdownMenuItem(value: 6, child: Text('Sabtu')),
+                                      DropdownMenuItem(value: 7, child: Text('Minggu')),
+                                    ],
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _slots[index] = CourseSlotModel(
+                                            id: slot.id,
+                                            courseId: slot.courseId,
+                                            dayOfWeek: val,
+                                            startTime: slot.startTime,
+                                            endTime: slot.endTime,
+                                            room: slot.room,
+                                          );
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444)),
+                                  onPressed: () => _removeSlot(index),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    initialValue: slot.startTime,
+                                    decoration: InputDecoration(
+                                      labelText: 'Mulai',
+                                      hintText: '08:00',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onChanged: (val) {
+                                      _slots[index] = CourseSlotModel(
+                                        id: slot.id,
+                                        courseId: slot.courseId,
+                                        dayOfWeek: slot.dayOfWeek,
+                                        startTime: val,
+                                        endTime: slot.endTime,
+                                        room: slot.room,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextFormField(
+                                    initialValue: slot.endTime,
+                                    decoration: InputDecoration(
+                                      labelText: 'Selesai',
+                                      hintText: '09:40',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onChanged: (val) {
+                                      _slots[index] = CourseSlotModel(
+                                        id: slot.id,
+                                        courseId: slot.courseId,
+                                        dayOfWeek: slot.dayOfWeek,
+                                        startTime: slot.startTime,
+                                        endTime: val,
+                                        room: slot.room,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextFormField(
+                                    initialValue: slot.room,
+                                    decoration: InputDecoration(
+                                      labelText: 'Ruang',
+                                      hintText: 'R. 102',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onChanged: (val) {
+                                      _slots[index] = CourseSlotModel(
+                                        id: slot.id,
+                                        courseId: slot.courseId,
+                                        dayOfWeek: slot.dayOfWeek,
+                                        startTime: slot.startTime,
+                                        endTime: slot.endTime,
+                                        room: val,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+
+                  const SizedBox(height: 18),
+                  // Kata Kunci Tambahan
+                  const Text(
+                    'Kata Kunci Auto-Tag (opsional)',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _keywordsController,
+                    decoration: _inputDecoration('Contoh: react, flutter, html, api', Icons.tag_rounded),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Submit Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF42A5F5),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _isSubmitting ? null : _submit,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              isEdit ? 'Simpan Perubahan' : 'Buat Mata Kuliah',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint, IconData prefixIcon) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(prefixIcon, color: const Color(0xFF42A5F5), size: 20),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 1.5),
       ),
     );
   }

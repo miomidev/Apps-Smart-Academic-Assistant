@@ -1,5 +1,6 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/config/api_config.dart';
@@ -28,6 +29,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
   String? _selectedCourseId;
   bool _isSaving = false;
   bool _hasChanges = false;
+  bool _isAnalyzingAi = false;
 
   @override
   void initState() {
@@ -53,6 +55,231 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
     super.dispose();
   }
 
+  int get _wordCount {
+    final text = _contentController.text.trim();
+    if (text.isEmpty) return 0;
+    return text.split(RegExp(r'\s+')).length;
+  }
+
+  int get _charCount => _contentController.text.length;
+
+  Future<void> _copyContentToClipboard() async {
+    final text = _contentController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Konten catatan masih kosong.')),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transkrip berhasil disalin ke clipboard!'),
+          backgroundColor: Color(0xFF1E88E5),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _suggestCourseWithAi() async {
+    final text = _contentController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tulis atau rekam konten catatan terlebih dahulu.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isAnalyzingAi = true);
+
+    try {
+      final result = await ref.read(notesListProvider.notifier).suggestCourse(
+            content: text,
+            createdAt: widget.note.createdAt,
+          );
+
+      if (mounted) {
+        setState(() => _isAnalyzingAi = false);
+
+        if (result != null && result.suggestedCourseId != null) {
+          final courses = ref.read(coursesListProvider).value ?? [];
+          final matchedCourse = courses.firstWhere(
+            (c) => c.id == result.suggestedCourseId,
+            orElse: () => CourseModel(
+              id: result.suggestedCourseId!,
+              name: result.suggestedCourseName ?? 'Mata Kuliah',
+              colorHex: '#42A5F5',
+            ),
+          );
+
+          final confidencePercent = (result.confidenceScore * 100).toInt();
+
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (ctx) => Container(
+              padding: const EdgeInsets.all(24),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFF1E88E5),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Rekomendasi Mata Kuliah AI',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF212121),
+                              ),
+                            ),
+                            Text(
+                              'Berdasarkan kata kunci materi dalam catatan',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: AppColors.fromHex(matchedCourse.colorHex),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            matchedCourse.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF212121),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$confidencePercent% Cocok',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E88E5),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedCourseId = matchedCourse.id;
+                          _hasChanges = true;
+                        });
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Mata kuliah diatur ke "${matchedCourse.name}"',
+                            ),
+                            backgroundColor: const Color(0xFF10B981),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF42A5F5),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'Terapkan Mata Kuliah Ini',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('AI belum menemukan mata kuliah yang cocok.'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAnalyzingAi = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal analisis AI: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _saveChanges() async {
     setState(() => _isSaving = true);
     try {
@@ -70,7 +297,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Catatan berhasil diperbarui!'),
-            backgroundColor: AppColors.success,
+            backgroundColor: Color(0xFF10B981),
           ),
         );
       }
@@ -80,7 +307,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gagal menyimpan: $e'),
-            backgroundColor: AppColors.error,
+            backgroundColor: const Color(0xFFEF4444),
           ),
         );
       }
@@ -91,20 +318,31 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hapus Catatan?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          'Hapus Catatan?',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         content: const Text(
-          'Tindakan ini tidak dapat dibatalkan.',
+          'Catatan ini beserta file terkait akan dihapus secara permanen.',
+          style: TextStyle(color: Color(0xFF64748B), height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Batal'),
+            child: const Text('Batal', style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Hapus'),
           ),
@@ -137,8 +375,22 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
     );
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Detail Catatan'),
+        title: const Text(
+          'Detail Catatan',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF212121),
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF212121)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         actions: [
           if (_hasChanges)
             IconButton(
@@ -146,14 +398,17 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF42A5F5),
+                      ),
                     )
-                  : const Icon(Icons.check, color: AppColors.primary),
+                  : const Icon(Icons.check_rounded, color: Color(0xFF42A5F5), size: 26),
               tooltip: 'Simpan Perubahan',
               onPressed: _isSaving ? null : _saveChanges,
             ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: AppColors.error),
+            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
             tooltip: 'Hapus',
             onPressed: _deleteNote,
           ),
@@ -204,81 +459,152 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
                       ),
                     ),
                   ],
-                  child: Chip(
-                    avatar: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: AppColors.fromHex(currentCourse.colorHex),
-                        shape: BoxShape.circle,
-                      ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    label: Text(
-                      currentCourse.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: AppColors.fromHex(currentCourse.colorHex),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          currentCourse.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: Color(0xFF212121),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: Color(0xFF64748B),
+                        ),
+                      ],
                     ),
-                    deleteIcon: const Icon(Icons.arrow_drop_down, size: 18),
-                    onDeleted: () {},
                   ),
                 ),
 
                 // Note Type badge
-                Chip(
-                  avatar: Icon(
-                    widget.note.type == NoteType.voice
-                        ? Icons.mic
-                        : Icons.description,
-                    size: 14,
-                    color: AppColors.primary,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  label: Text(
-                    widget.note.type == NoteType.voice ? 'Voice' : 'Dokumen',
-                    style: const TextStyle(fontSize: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        widget.note.type == NoteType.voice
+                            ? Icons.mic_rounded
+                            : Icons.description_rounded,
+                        size: 13,
+                        color: const Color(0xFF1E88E5),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.note.type == NoteType.voice ? 'Voice' : 'Dokumen',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E88E5),
+                        ),
+                      ),
+                    ],
                   ),
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
                 ),
 
                 // Duration badge if voice
                 if (widget.note.durationSeconds != null)
-                  Chip(
-                    avatar: const Icon(Icons.timer_outlined, size: 14),
-                    label: Text(
-                      '${widget.note.durationSeconds} dtk',
-                      style: const TextStyle(fontSize: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.timer_outlined,
+                          size: 13,
+                          color: Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.note.durationSeconds} dtk',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
                 // Date badge
-                Chip(
-                  label: Text(
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
                     DateFormat('d MMM yyyy, HH:mm', 'id_ID')
-                        .format(widget.note.createdAt),
-                    style: TextStyle(
+                        .format(widget.note.createdAt.toLocal()),
+                    style: const TextStyle(
                       fontSize: 11,
-                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF64748B),
                     ),
                   ),
-                  backgroundColor: AppColors.neutral200,
                 ),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Title
-            TextField(
-              controller: _titleController,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+            // Title card
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFEEEEEE)),
               ),
-              decoration: const InputDecoration(
-                hintText: 'Judul catatan...',
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
+              child: TextField(
+                controller: _titleController,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF212121),
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Judul catatan perkuliahan...',
+                  hintStyle: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 16,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
-            const Divider(height: 24),
+            const SizedBox(height: 16),
 
             // If Voice note with audio file, show Audio Player Card
             if (widget.note.type == NoteType.voice &&
@@ -295,31 +621,47 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.neutral200),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFEEEEEE)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.attach_file, color: AppColors.primary),
-                    const SizedBox(width: 12),
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        color: Color(0xFF1E88E5),
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             widget.note.fileName ?? 'File Dokumen',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                               fontSize: 14,
+                              color: Color(0xFF212121),
                             ),
                           ),
+                          const SizedBox(height: 2),
                           if (widget.note.fileSize != null)
                             Text(
                               '${(widget.note.fileSize! / 1024).toStringAsFixed(1)} KB',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: AppColors.textSecondary,
+                                color: Color(0xFF64748B),
                               ),
                             ),
                         ],
@@ -331,38 +673,155 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               const SizedBox(height: 16),
             ],
 
-            // Content / Transcript Editor
-            const Text(
-              'Transkrip / Isi Catatan:',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 8),
+            // Content / Transcript Card with Header Actions
             Container(
-              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.neutral200),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFEEEEEE)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: TextField(
-                controller: _contentController,
-                maxLines: null,
-                style: const TextStyle(
-                  fontSize: 15,
-                  height: 1.6,
-                  color: AppColors.textPrimary,
-                ),
-                decoration: const InputDecoration(
-                  hintText: 'Belum ada konten transkrip...',
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Transcript Toolbar
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Transkrip / Isi Catatan',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: Color(0xFF212121),
+                          ),
+                        ),
+                        const Spacer(),
+                        // Word Count chip
+                        Text(
+                          '$_wordCount kata • $_charCount karakter',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Copy Button
+                        GestureDetector(
+                          onTap: _copyContentToClipboard,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                  color: Color(0xFF475569),
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Salin',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // AI Suggest Button
+                        GestureDetector(
+                          onTap: _isAnalyzingAi ? null : _suggestCourseWithAi,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isAnalyzingAi)
+                                  const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                      color: Color(0xFF1E88E5),
+                                    ),
+                                  )
+                                else
+                                  const Icon(
+                                    Icons.auto_awesome_rounded,
+                                    size: 13,
+                                    color: Color(0xFF1E88E5),
+                                  ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'Saran AI',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E88E5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+                  // Text Editor Area
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      controller: _contentController,
+                      maxLines: null,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.6,
+                        color: Color(0xFF212121),
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Belum ada konten transkrip atau catatan...',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -490,7 +949,7 @@ class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
         : (widget.fallbackDurationSeconds ?? 0) * 1000;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFEFF6FF),
@@ -509,13 +968,13 @@ class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
                   width: 48,
                   height: 48,
                   decoration: const BoxDecoration(
-                    color: Color(0xFF58ACF6),
+                    color: Color(0xFF42A5F5),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     color: Colors.white,
-                    size: 32,
+                    size: 30,
                   ),
                 ),
               ),
@@ -554,14 +1013,14 @@ class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.mic_rounded, size: 14, color: Color(0xFF58ACF6)),
+                    Icon(Icons.mic_rounded, size: 14, color: Color(0xFF42A5F5)),
                     SizedBox(width: 4),
                     Text(
                       'Audio',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF58ACF6),
+                        color: Color(0xFF42A5F5),
                       ),
                     ),
                   ],
@@ -576,14 +1035,16 @@ class _VoiceNotePlayerCardState extends ConsumerState<_VoiceNotePlayerCard> {
                 trackHeight: 3.5,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                activeTrackColor: const Color(0xFF58ACF6),
+                activeTrackColor: const Color(0xFF42A5F5),
                 inactiveTrackColor: const Color(0xFFCBD5E1),
-                thumbColor: const Color(0xFF58ACF6),
+                thumbColor: const Color(0xFF42A5F5),
               ),
               child: Slider(
                 min: 0.0,
                 max: totalMs.toDouble(),
-                value: _position.inMilliseconds.toDouble().clamp(0.0, totalMs.toDouble()),
+                value: _position.inMilliseconds
+                    .toDouble()
+                    .clamp(0.0, totalMs.toDouble()),
                 onChanged: (val) async {
                   final target = Duration(milliseconds: val.toInt());
                   await _player.seek(target);
