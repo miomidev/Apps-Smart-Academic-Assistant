@@ -15,8 +15,9 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final PageController _pageController = PageController();
-  final TextEditingController _universityController =
-      TextEditingController(text: 'Universitas Siliwangi');
+  final TextEditingController _universityController = TextEditingController(
+    text: 'Universitas Siliwangi',
+  );
   int _currentPage = 0;
   bool _notificationGranted = false;
   bool _isSubmitting = false;
@@ -32,7 +33,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     {
       'title': 'RPS ke Jadwal Otomatis',
       'subtitle':
-          'Cukup upload file PDF RPS dari dosen, Smart Academic Assistant akan mengekstrak 16 pertemuan lengkap dengan tanggal & pengingat.',
+          'Cukup upload file PDF RPS dari dosen, PENDAR akan mengekstrak 16 pertemuan lengkap dengan tanggal & pengingat.',
       'icon': Icons.picture_as_pdf_rounded,
       'color': AppColors.secondary,
     },
@@ -131,7 +132,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             width: 100,
                             height: 100,
                             decoration: BoxDecoration(
-                              color: (item['color'] as Color).withValues(alpha: 0.12),
+                              color: (item['color'] as Color).withValues(
+                                alpha: 0.12,
+                              ),
                               borderRadius: BorderRadius.circular(28),
                             ),
                             child: Icon(
@@ -167,7 +170,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     // Final Page: Profil Kampus & Izin Notifikasi
                     return SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 28, vertical: 16),
+                        horizontal: 28,
+                        vertical: 16,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -278,7 +283,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                                     onPressed: _requestNotificationPermission,
                                     style: ElevatedButton.styleFrom(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 8),
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
                                       textStyle: const TextStyle(fontSize: 12),
                                     ),
                                     child: const Text('Aktifkan'),
@@ -338,7 +345,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           },
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 14),
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/config/api_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/storage_service.dart';
 import '../providers/auth_provider.dart';
@@ -17,8 +18,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _handleLogin() async {
     setState(() => _isLoading = true);
-    final success =
-        await ref.read(authStateProvider.notifier).loginWithDevBypass();
+    final success = await ref
+        .read(authStateProvider.notifier)
+        .loginWithDevBypass();
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -43,23 +45,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Pengaturan Server Backend'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Gunakan IP laptop jika menjalankan di HP fisik (contoh: http://192.168.1.5:3000/api/v1):',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'Base URL',
-                hintText: 'http://10.0.2.2:3000/api/v1',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Pilih preset atau masukkan URL custom:',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.cloud_done_rounded,
+                      size: 16,
+                      color: Color(0xFF22C55E),
+                    ),
+                    label: const Text(
+                      'Cloud (Live)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = ApiConfig.cloudProductionBaseUrl;
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.phone_android_rounded,
+                      size: 16,
+                      color: Color(0xFF3B82F6),
+                    ),
+                    label: const Text(
+                      'Emulator (10.0.2.2)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = 'http://10.0.2.2:3000/api/v1';
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.computer_rounded,
+                      size: 16,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                    label: const Text(
+                      'Localhost (3000)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = 'http://localhost:3000/api/v1';
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Base URL',
+                  hintText: 'https://pendar.miomidev.com/api/v1',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -95,7 +148,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         actions: [
           IconButton(
             tooltip: 'Konfigurasi Server',
-            icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: AppColors.textSecondary,
+            ),
             onPressed: _showServerConfigDialog,
           ),
           TextButton(
@@ -114,7 +170,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     fontSize: 14,
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF58ACF6)),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: Color(0xFF58ACF6),
+                ),
               ],
             ),
           ),
@@ -154,22 +214,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                'Smart Academic\nAssistant',
+                'PENDAR',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                      height: 1.2,
-                    ),
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textPrimary,
+                  letterSpacing: 2.0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Smart Academic Assistant',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                  letterSpacing: 0.5,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 'Fokus belajar lebih tajam, transkripsi suara pintar, dan kelola jadwal RPS otomatis.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                      height: 1.5,
-                    ),
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 32),
 
@@ -177,13 +247,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const _FeatureBadge(
                 icon: Icons.mic_rounded,
                 title: 'Voice Auto-Tag',
-                subtitle: 'Transkripsi bicara langsung tersimpan ke mata kuliah',
+                subtitle:
+                    'Transkripsi bicara langsung tersimpan ke mata kuliah',
               ),
               const SizedBox(height: 12),
               const _FeatureBadge(
                 icon: Icons.picture_as_pdf_rounded,
                 title: 'RPS Extractor',
-                subtitle: 'Upload PDF RPS, langsung jadi jadwal kuliah 1 semester',
+                subtitle:
+                    'Upload PDF RPS, langsung jadi jadwal kuliah 1 semester',
               ),
               const SizedBox(height: 12),
               const _FeatureBadge(
@@ -219,7 +291,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : const Icon(Icons.school_rounded),
                   label: Text(
                     _isLoading ? 'Menghubungkan...' : 'Masuk sebagai Mahasiswa',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -233,7 +308,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF42A5F5),
-                    side: const BorderSide(color: Color(0xFF42A5F5), width: 1.5),
+                    side: const BorderSide(
+                      color: Color(0xFF42A5F5),
+                      width: 1.5,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -250,9 +328,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               Text(
                 'Dikembangkan untuk IconFest • Universitas Siliwangi',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textMuted,
-                      fontSize: 11,
-                    ),
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                ),
               ),
               const SizedBox(height: 20),
             ],

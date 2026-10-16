@@ -1,4 +1,4 @@
-package com.example.application_smartacademicassistant
+package com.miomidev.pendar
 
 import android.app.ActivityManager
 import android.content.Context

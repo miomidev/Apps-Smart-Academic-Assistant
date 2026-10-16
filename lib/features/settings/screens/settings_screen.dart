@@ -830,7 +830,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 32),
           const Center(
             child: Text(
-              'Smart Academic Assistant v1.0.0\nIconFest • Universitas Siliwangi',
+              'PENDAR v1.0.0\nSmart Academic Assistant • IconFest 2026',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,

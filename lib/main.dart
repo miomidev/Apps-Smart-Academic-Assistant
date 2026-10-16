@@ -21,9 +21,7 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
       child: const SmartAcademicAssistantApp(),
     ),
   );
@@ -37,7 +35,7 @@ class SmartAcademicAssistantApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: 'Smart Academic Assistant',
+      title: 'PENDAR',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
@@ -46,4 +44,3 @@ class SmartAcademicAssistantApp extends ConsumerWidget {
     );
   }
 }
-
