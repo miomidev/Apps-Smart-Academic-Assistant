@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../../core/config/api_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/storage_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -57,35 +58,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Gunakan IP jaringan lokal jika dijalankan di perangkat fisik:',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: 'Base URL',
-                hintText: 'http://192.168.1.X:3000/api/v1',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Pilih preset atau masukkan URL custom:',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.cloud_done_rounded,
+                      size: 16,
+                      color: Color(0xFF22C55E),
+                    ),
+                    label: const Text(
+                      'Cloud (Live)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = ApiConfig.cloudProductionBaseUrl;
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.phone_android_rounded,
+                      size: 16,
+                      color: Color(0xFF3B82F6),
+                    ),
+                    label: const Text(
+                      'Emulator (10.0.2.2)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = 'http://10.0.2.2:3000/api/v1';
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(
+                      Icons.computer_rounded,
+                      size: 16,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                    label: const Text(
+                      'Localhost (3000)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = 'http://localhost:3000/api/v1';
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  labelText: 'Base URL',
+                  hintText: 'https://pendar.miomidev.com/api/v1',
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -98,7 +153,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF42A5F5),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
             onPressed: () async {
@@ -125,8 +182,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _showEditProfileDialog() {
     final user = ref.read(authStateProvider).value;
     final nameController = TextEditingController(text: user?.name ?? '');
-    final univController =
-        TextEditingController(text: user?.university ?? '');
+    final univController = TextEditingController(text: user?.university ?? '');
 
     showDialog(
       context: context,
@@ -180,7 +236,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -193,13 +252,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF42A5F5),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
             onPressed: () async {
               final newName = nameController.text.trim();
               if (newName.isNotEmpty) {
-                await ref.read(authStateProvider.notifier).updateProfile(
+                await ref
+                    .read(authStateProvider.notifier)
+                    .updateProfile(
                       name: newName,
                       university: univController.text.trim(),
                     );
@@ -355,7 +418,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 // Bahasa Transkripsi
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -376,7 +442,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     _selectedLanguage == 'id-ID'
                         ? 'Bahasa Indonesia (id-ID)'
                         : 'English (en-US)',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -392,11 +461,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       items: const [
                         DropdownMenuItem(
                           value: 'id-ID',
-                          child: Text('Indonesia', style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            'Indonesia',
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'en-US',
-                          child: Text('English', style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            'English',
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                       ],
                       onChanged: (val) async {
@@ -408,10 +483,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                 ),
-                const Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF1F5F9)),
+                const Divider(
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: Color(0xFFF1F5F9),
+                ),
                 // Waktu Default Reminder
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -430,7 +513,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   subtitle: Text(
                     '$_selectedReminderMinutes menit sebelum jadwal',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -444,9 +530,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       underline: const SizedBox(),
                       isDense: true,
                       items: const [
-                        DropdownMenuItem(value: 15, child: Text('15 mnt', style: TextStyle(fontSize: 13))),
-                        DropdownMenuItem(value: 30, child: Text('30 mnt', style: TextStyle(fontSize: 13))),
-                        DropdownMenuItem(value: 60, child: Text('60 mnt', style: TextStyle(fontSize: 13))),
+                        DropdownMenuItem(
+                          value: 15,
+                          child: Text('15 mnt', style: TextStyle(fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 30,
+                          child: Text('30 mnt', style: TextStyle(fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 60,
+                          child: Text('60 mnt', style: TextStyle(fontSize: 13)),
+                        ),
                       ],
                       onChanged: (val) async {
                         if (val != null) {
@@ -484,16 +579,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _micGranted ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                      color: _micGranted
+                          ? const Color(0xFFECFDF5)
+                          : const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.mic_rounded,
-                      color: _micGranted ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                      color: _micGranted
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEF4444),
                       size: 22,
                     ),
                   ),
@@ -505,7 +607,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     _micGranted
                         ? 'Diizinkan (Voice STT aktif)'
                         : 'Belum diizinkan',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
                   trailing: TextButton(
                     onPressed: () async {
@@ -518,13 +623,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: const Text('Periksa'),
                   ),
                 ),
-                const Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF1F5F9)),
+                const Divider(
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: Color(0xFFF1F5F9),
+                ),
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _notificationGranted ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                      color: _notificationGranted
+                          ? const Color(0xFFECFDF5)
+                          : const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
@@ -543,7 +658,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     _notificationGranted
                         ? 'Diizinkan (Alarm jadwal aktif)'
                         : 'Belum diizinkan',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
                   trailing: TextButton(
                     onPressed: () async {
@@ -583,7 +701,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -602,14 +723,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   subtitle: Text(
                     storage.getBaseUrl(),
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
-                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF94A3B8),
+                  ),
                   onTap: _showServerConfigDialog,
                 ),
-                const Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF1F5F9)),
+                const Divider(
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: Color(0xFFF1F5F9),
+                ),
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -638,16 +773,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         title: const Text(
                           'Konfirmasi Keluar',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
                         ),
                         content: const Text(
                           'Apakah kamu yakin ingin keluar dari akun ini?',
                           style: TextStyle(color: Color(0xFF475569)),
                         ),
-                        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        actionsPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
@@ -660,8 +803,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFEF4444),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
                             ),
                             onPressed: () => Navigator.pop(ctx, true),
                             child: const Text('Keluar'),
